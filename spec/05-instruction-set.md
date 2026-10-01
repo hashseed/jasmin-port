@@ -105,7 +105,7 @@ A target beyond the last line simply ends the program on the next step/run itera
 | `CLC` `STC` `CMC` | CF := 0 / 1 / !CF |
 | `CLD` `STD` | DF := 0 / 1 |
 | `PUSHF` / `PUSHFD` | push 2 / 4 bytes: bit1 = 1, CF bit0, PF bit2, AF bit4, ZF bit6, SF bit7, TF bit8, DF bit10, OF bit11 |
-| `POPF` / `POPFD` | if ESP + size > EBP: do nothing (no error); else pop and set CF PF AF ZF SF TF DF OF from those bits |
+| `POPF` / `POPFD` | if ESP + size > EBP (port: top of memory, 07 Q-S-1): do nothing (no error); else pop and set CF PF AF ZF SF TF DF OF from those bits |
 | `LAHF` | AH := low byte of the PUSHF word |
 | `SAHF` | CF PF AF ZF SF from AH bits 0, 2, 4, 6, 7 |
 
@@ -189,10 +189,10 @@ Default operation size 8; operands read *signed*. `STi` means `ST0`..`ST7`.
 | `FLD` | m32, m64, STi | push value |
 | `FST` / `FSTP` | m32, m64, STi | dest := ST0; FSTP then pops |
 | `FILD` | m16, m32, m64 | push integer |
-| `FIST` | m16, m32 (default 4) | dest := trunc(ST0) |
+| `FIST` | m16, m32 (undecided-size memory is rejected) | dest := trunc(ST0) |
 | `FISTP` | m16, m32, m64 | dest := trunc(ST0); pop |
-| `FADD FSUB FSUBR FMUL FDIV FDIVR` | none: `ST1 := ST1 op ST0` (no pop). `m32/m64` or one `STi`: `ST0 := ST0 op x`. `STi, STj` (one must be ST0): `STi := STi op STj`. `TO STi`: `STi := STi op ST0` | `op` for SUBR/DIVR is reversed (`x op y` = `y - x`, `y / x`) |
-| `FADDP FSUBP FSUBRP FMULP FDIVP FDIVRP` | none: `ST1 := ST1 op ST0`, pop. `STi` or `STi, ST0`: `STi := STi op ST0`, pop | |
+| `FADD FSUB FSUBR FMUL FDIV FDIVR` | `m32/m64` or one `STi`: `ST0 := ST0 op x`. `STi, STj` (one must be ST0): `STi := STi op STj`. `TO STi`: `STi := STi op ST0` | `op` for SUBR/DIVR is reversed (`x op y` = `y - x`, `y / x`) |
+| `FADDP FSUBP FSUBRP FMULP FDIVP FDIVRP` | none: `ST1 := ST1 op ST0`, pop. `STi` or `STi, STj`: `STi := STi op STj`, pop (the second operand is meant to be ST0 but any `STj` is accepted) | |
 | `FIADD FISUB FISUBR FIMUL FIDIV FIDIVR` | m16, m32 | `ST0 := ST0 op int(m)` |
 | `FABS` `FCHS` | none | ST0 := abs(ST0) / -ST0 |
 | `FSIN` `FCOS` `FSQRT` | none | ST0 := sin / cos / sqrt (radians) |

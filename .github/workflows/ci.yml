@@ -26,9 +26,6 @@ jobs:
       - run: npm run test:ui
       - run: npm run build
       - name: Conformance (TypeScript port)
-        # Expected to fail until the interpreter exists (docs/plan.md, M2). Remove
-        # continue-on-error once all 44 programs pass.
-        continue-on-error: true
         run: npm run conformance
 
   e2e:

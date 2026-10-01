@@ -51,6 +51,8 @@ export class DataSpace {
   private regInfo = new Map<number, MemCellInfo>();
   private nextReservableAddress: number;
   private outOfRange = false;
+  /** Set by JASMINSLEEP: milliseconds the run loop should wait before the next line. */
+  pendingSleepMs = 0;
   private variables = new Map<string, number>();
   private constants = new Map<string, bigint>();
 

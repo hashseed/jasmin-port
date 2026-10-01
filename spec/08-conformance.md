@@ -61,13 +61,13 @@ this table explains them. When a FIX/KEEP decision changes, update both.
 | 27-bcd | Q-I-10 | `PF=0` |
 | 30-errors | Q-E-1, Q-P-6 | `EIP=0x00000000`; line 8's message reads `...prefixes are allowed here` |
 | 31-runtime-stack-underflow | Q-E-1 | `EIP=0x00000000` |
-| 32-runtime-ebp-bound | Q-S-1, Q-I-13 | no `ERROR` line; `EAX=0x00000002 ESP=0x00000FFC EBP=0x00000FF8 EIP=0x00000004`; `MEM (non-zero bytes): 0FF8:02 0FFC:01` |
+| 32-runtime-ebp-bound | Q-S-1, Q-I-13 | no `ERROR` line; `EAX=0x00000002 ESP=0x00000FFC EBP=0x00000FF8 EIP=0x00000005`; `MEM (non-zero bytes): 0FF8:02 0FFC:01` |
 | 33-runtime-div-zero | Q-I-3, Q-E-1 | `EXCEPTION ...` becomes `ERROR line 2: Division by zero`; `EIP=0x00000002` |
 | 34-runtime-mem-oob | Q-E-1 | `EIP=0x00000001` |
 | 35-push-sizes | Q-I-13 | no `ERROR` line; `EAX=0x00060000 EBX=0x00000005 ESP=0x00001000 EIP=0x00000008`; `MEM (non-zero bytes): 0FF6:07 0FFA:06 0FFC:05` |
-| 36-setcc-broken | Q-I-11 | no `PARSE`/`ERROR` lines; `EBX=0x00000001` |
+| 36-setcc-broken | Q-I-11 | no `PARSE`/`ERROR` lines; `EBX=0x00000001 EIP=0x00000004` |
 | 37-idiv-negative | Q-I-1 | `EAX=0xFFFFFFFD EDX=0xFFFFFFFF` |
-| 39-bt-register-crash | Q-I-5 | no `EXCEPTION` line; `EIP=0x00000002`; `CF=1` |
+| 39-bt-register-crash | Q-I-5 | no `EXCEPTION` line; `EIP=0x00000003`; `CF=1` |
 | 40-cmpxchg-notequal | Q-I-4, Q-F-1 | `EAX=0x00000006`; `AF=1` |
 | 42-imul-flags | Q-I-2 | `CF=0 OF=0` |
 

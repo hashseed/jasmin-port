@@ -31,7 +31,7 @@ These are defaults; the owner can flip any of them.
 
 | ID | Original behavior | Disposition |
 |---|---|---|
-| Q-I-1 | 32-bit `IDIV` builds `EDX:EAX` from *sign-extended* halves, so a negative dividend gives garbage: `mov eax,-7 / cdq / mov ebx,2 / idiv ebx` yields `EAX=0x7FFFFFFD`. 8/16-bit forms are correct. *Verified.* | **FIX**: `EAX=0xFFFFFFFD (-3)`, `EDX=0xFFFFFFFF (-1)`. |
+| Q-I-1 | 32-bit `IDIV` builds `EDX:EAX` from *sign-extended* halves, so a negative dividend gives garbage: `mov eax,-7 / cdq / mov ebx,2 / idiv ebx` yields `EAX=0x7FFFFFFD`. The 16-bit form has the same flaw when AX has bit 15 set (`DX=0, AX=0x8000` divides -32768). 8-bit is correct. *Verified.* | **FIX**: `EAX=0xFFFFFFFD (-3)`, `EDX=0xFFFFFFFF (-1)`; the 16-bit dividend is `DX:AX` with AX read unsigned. |
 | Q-I-2 | `IMUL` sets `CF = OF = (upper half != 0)`, so a small negative product (e.g. `-1 * 2`) sets both. *Verified.* | **FIX**: `CF = OF = 1` iff the full product differs from the sign-extended truncated result. |
 | Q-I-3 | `DIV`/`IDIV` by zero throws a Java `ArithmeticException` (message `java.lang.ArithmeticException: / by zero` or `BigInteger divide by zero`) which stops the run. A quotient that does not fit is silently truncated. *Verified.* | **FIX**: runtime errors `Division by zero` and `Division overflow` (no registers changed), handled like other runtime errors. |
 | Q-I-4 | `CMPXCHG` when not equal writes the *negated* destination into the accumulator (`EAX=1, ESI=6` -> `EAX=0xFFFFFFFA`). *Verified.* | **FIX**: accumulator := destination. |
@@ -47,6 +47,7 @@ These are defaults; the owner can flip any of them.
 | Q-I-14 | `LOOP*` always decrement ECX, but the help pages say CX. | **KEEP** the ECX behavior; **FIX** the help pages `LOOP`, `LOOPE`, `LOOPZ`, `LOOPNE`, `LOOPNZ` to say ECX (09 §1.1). |
 | Q-I-15 | `POPF`/`POPFD` on an "empty" stack do nothing, without an error. | **KEEP**. |
 | Q-I-16 | `CMOVcc` accepts everything `MOV` accepts, including immediates and 8-bit operands (`cmove al, 5`). On real x86, `CMOVcc` takes a 16- or 32-bit register destination and a same-size register or memory source; immediates and 8-bit operands are invalid. | **FIX** (owner decision): destination must be `r16/r32`, else `Operand must be a 16bit or 32bit register. `; source must be `r16/r32/m16/m32` (undecided memory takes the destination size), else `Operand must be a 16bit or 32bit register, or a 16bit or 32bit memory location. `; different sizes give `Size mismatch`. A third operand gives `Operand must be empty. ` (Q-P-3). |
+| Q-I-17 | `SHLD`/`SHRD` compare the count operand to `CL` with `FullArgument.equals(Address)`, which is always false, so `shld eax, ebx, cl` is rejected (`Operand must be ...`) although the help page allows CL. | **FIX**: accept `CL` as the count (compared by register identity, as `SHR`/`RCL` do). |
 
 ## Stack and errors
 
