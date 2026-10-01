@@ -99,7 +99,7 @@ export const SPLIT_DEFAULTS: Record<SplitName, (size: number) => number> = {
               <app-code-editor [doc]="doc()" />
             }
           </app-panel-card>
-          <app-bottom-pane second [idPrefix]="'bottom-' + doc().id" />
+          <app-bottom-pane second [idPrefix]="'bottom-' + doc().id" [doc]="doc()" />
         </app-split-pane>
         <app-panel-card second heading="Memory" class="memory">
           <app-memory-panel [doc]="doc()" [(highlight)]="highlight" />

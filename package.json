@@ -4,6 +4,7 @@
   "scripts": {
     "ng": "ng",
     "start": "ng serve",
+    "prebuild": "node scripts/help-pages.mjs --check",
     "build": "ng build",
     "watch": "ng build --watch --configuration development",
     "build:headless": "esbuild src/headless/run.ts --bundle --platform=node --target=node22 --log-level=warning --outfile=dist/headless/run.js",
@@ -15,7 +16,8 @@
     "lint": "ng lint",
     "typecheck": "tsc -p tsconfig.headless.json",
     "format": "prettier --write .",
-    "format:check": "prettier --check ."
+    "format:check": "prettier --check .",
+    "help:index": "node scripts/help-pages.mjs"
   },
   "private": true,
   "packageManager": "npm@11.19.0",
