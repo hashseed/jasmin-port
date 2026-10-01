@@ -39,8 +39,11 @@ against the programs in [`conformance/`](conformance/) (see
 
 ## Port principles (defaults chosen for this spec)
 
-1. **Same UI, same mental model.** The layout, panels, controls, colors and wording
-   match the Java app. The instruction pointer stays a *source line number*, memory
+1. **Same UI, same mental model.** The layout, panels, controls, color *meanings* and
+   wording match the Java app. The look is modern rather than Swing: exact colors,
+   icons and fonts are design tokens described in
+   [docs/plan.md](../docs/plan.md#visual-direction), and the RGB values in this spec
+   are the original's. The instruction pointer stays a *source line number*, memory
    stays a flat byte array starting at a configurable offset, and so on. Students who
    knew Jasmin should feel at home.
 2. **Purely client-side.** No backend. Files are opened and saved through the browser,

@@ -1,0 +1,9 @@
+/* Type-checks the interpreter core and the Node headless runner outside Angular. */
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "noEmit": true,
+    "types": ["node"]
+  },
+  "include": ["src/app/core/**/*.ts", "src/headless/**/*.ts"]
+}

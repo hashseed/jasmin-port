@@ -45,7 +45,9 @@ offline once loaded.
 | `lrr_logo.png`, `tum_logo.gif` | Chair and university logos (credits) |
 | `icons/*.png` (20) + `leer.gif` | Toolbar and menu icons (02 §3): `new`, `fileopen`, `filesaveas`, `undo`, `redo`, `editcut`, `editcopy`, `editpaste`, `back`, `forward`, `play_green`, `play_pause`, `play_step`, `play_current`, `play_stop`, `play_clear3`, `breakpoint`, `takesnapshot`, `loadsnapshot`, `configure`; `leer.gif` is an empty placeholder |
 
-The port reuses these images unchanged (they are GPL-2.0 like the code, §5). The
+The port reuses the logos and photos unchanged but draws toolbar and menu icons as
+Lucide SVGs (docs/plan.md, "Visual direction"), so `icons/*.png` and `leer.gif` are
+not shipped. The images it ships stay unchanged (they are GPL-2.0 like the code, §5). The
 `homepage/` directory (project web site) and `tests/` (two `.asm` samples) are not
 shipped; the samples may be offered as examples.
 
@@ -65,7 +67,7 @@ Every write is saved immediately.
 
 | Key | Type | Default | Written by | Used for |
 |---|---|---|---|---|
-| `font` | string | `Sans Serif` | Configuration page | Editor and gutter font family |
+| `font` | string | `Sans Serif` (port: `JetBrains Mono`) | Configuration page | Editor and gutter font family |
 | `font.size` | int | `12` | Configuration page | Editor and gutter font size |
 | `memory` | int (bytes) | `4096` | Configuration page | Memory size of new documents (rounded up to a multiple of 4, 04 §1) |
 | `offset` | int | `0` (absent at first start) | Configuration page | Start address of memory of new documents |
@@ -73,6 +75,7 @@ Every write is saved immediately.
 | `lastpath.asm` | path | none | Open/Save code | Initial file in the code dialogs |
 | `lastpath.mem` | path | none | Save/Load memory | Initial file in the memory dialogs |
 | `split1.location` ... `split4.location` | int (px) | computed (02 §5) | Divider moves | Initial divider positions of new documents |
+| `theme` (port only) | `system` / `light` / `dark` | `system` | Configuration page | Color theme, applied immediately |
 
 Port:
 - Store the same keys in `localStorage` under one JSON object, key `jasmin.settings`.
