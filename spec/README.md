@@ -52,6 +52,10 @@ against the programs in [`conformance/`](conformance/) (see
 4. **Desktop-only affordances get web equivalents** (native file chooser, maximized
    window, right-click menus, Swing look and feel). These are called out inline as
    *Port note*.
+5. **One test suite, two implementations.** The conformance programs run headlessly
+   against both the original Java interpreter and the port
+   ([08-conformance.md](08-conformance.md) §4). The interpreter core therefore has no
+   Angular or DOM dependencies and ships a Node command-line runner.
 
 ## Open questions for the owner
 

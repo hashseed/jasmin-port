@@ -1,0 +1,20 @@
+PARSE line 0: Operand too large, does not fit into destination. @8+3
+PARSE line 1: Size mismatch @9+2
+PARSE line 2: Unknown command @0+3
+PARSE line 3: You must place a comma between any two parameters @8+3
+PARSE line 4: Scale factor must be either 1, 2, 4, or 8. @4+7
+PARSE line 5: ESP cannot be used as an index register. @4+7
+PARSE line 6: Only 32bit registers are valid for address calculation. @4+4
+PARSE line 7: Memory address out of range @4+6
+PARSE line 8: Only the REPE/REPZ/REPNE/REPNZ prefixes are allowed here @0+3
+PARSE line 9: Preprocessor commands must be preceded by a label. @0+3
+PARSE line 10: A comma must only be placed after a parameter @9+1
+PARSE line 11: Only an immediate or a memory location is allowed after a size qualifier @5+3
+PARSE line 12: Operand must be at least 2 bytes large @5+2
+PARSE line 13: Operand must be a register, or an 8bit, 16bit or 32bit memory location.  @4+3
+PARSE line 14: Malformed memory address @9+5
+ERROR line 0: Operand too large, does not fit into destination.
+EAX=0x00000000 EBX=0x00000000 ECX=0x00000000 EDX=0x00000000 ESI=0x00000000 EDI=0x00000000 ESP=0x00001000 EBP=0x00001000 EIP=0x00000000 
+CF=0 OF=0 SF=0 ZF=0 PF=0 AF=0 DF=0
+MEM (non-zero bytes):
+FPU: ST0=0.0 ST1=0.0 ST2=0.0 ST3=0.0 ST4=0.0 ST5=0.0 ST6=0.0 ST7=0.0

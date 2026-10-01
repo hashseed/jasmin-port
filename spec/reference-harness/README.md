@@ -82,7 +82,11 @@ for f in *.asm; do bash ../../reference-harness/run-original.sh "$f" > "${f%.asm
 ```
 
 This reproduces all 42 `.expected` files byte for byte. They are the **original's**
-output. Where the port intentionally differs, 08 §3 lists the changes.
+output. Where the port intentionally differs, `NN.port.expected` holds the port's
+expectation and 08 §3 explains the changes; those files are maintained by hand.
+
+To check everything at once, use `bash spec/conformance/run-conformance.sh java`
+(08 §4).
 
 ## Trying a fix in the original
 

@@ -6,6 +6,8 @@
 |---|---|
 | `conformance/programs/NN-name.asm` | 42 small programs covering every instruction family, data directives, addressing, labels, errors and runtime faults |
 | `conformance/programs/NN-name.expected` | Final machine state produced by the **original** Java interpreter (pinned commit) |
+| `conformance/programs/NN-name.port.expected` | Expected output of the **port**, only for the 22 programs where an owner-approved fix changes the result (§3). Other programs share `NN-name.expected` |
+| `conformance/run-conformance.sh` | Runs the programs against either implementation and compares (§4) |
 | `conformance/mnemonics.txt` | The 230 mnemonics the original registers |
 | `reference-harness/` | `Run.java`, `LabelSource.java`, `run-original.sh`: rebuilds the original core headlessly from GitHub and runs `.asm` files. Setup and usage: [reference-harness/README.md](reference-harness/README.md) |
 
@@ -34,14 +36,15 @@ MEM (non-zero bytes): AAAA:VV AAAA:VV ...
 FPU: <name>=<value> x8, in physical register order R0..R7, names ST((i-TOP) mod 8), values in Java Double.toString format
 ```
 
-The port should ship an equivalent headless runner (Node, no Angular) that prints the
-same format, and a test that runs every program and compares with the expectation
-(original output, patched by §3).
+**Requirement:** the port ships an equivalent headless runner (§4) that prints the same
+format, so the same programs run against both implementations.
 
 ## 3. Port expectations that differ from the original (FIX items)
 
 For these programs the port must produce the original `.expected` output **with the
-listed changes**; everything not listed stays identical.
+listed changes**; everything not listed stays identical. The changed outputs are
+checked in as `NN-name.port.expected`, which is what the test runner compares against;
+this table explains them. When a FIX/KEEP decision changes, update both.
 
 | Program | Quirk | Changes vs. original output |
 |---|---|---|
@@ -56,7 +59,7 @@ listed changes**; everything not listed stays identical.
 | 25-string-ops | Q-F-1 | `AF=0` |
 | 26-cmps | Q-F-1 | `AF=1` |
 | 27-bcd | Q-I-10 | `PF=0` |
-| 30-errors | Q-E-1 | `EIP=0x00000000` |
+| 30-errors | Q-E-1, Q-P-6 | `EIP=0x00000000`; line 8's message reads `...prefixes are allowed here` |
 | 31-runtime-stack-underflow | Q-E-1 | `EIP=0x00000000` |
 | 32-runtime-ebp-bound | Q-S-1, Q-I-13 | no `ERROR` line; `EAX=0x00000002 ESP=0x00000FFC EBP=0x00000FF8 EIP=0x00000004`; `MEM (non-zero bytes): 0FF8:02 0FFC:01` |
 | 33-runtime-div-zero | Q-I-3, Q-E-1 | `EXCEPTION ...` becomes `ERROR line 2: Division by zero`; `EIP=0x00000002` |
@@ -76,7 +79,42 @@ Q-I-13.
 All other programs (01, 04-06, 08-10, 12, 14-17, 19, 22-24, 28-29, 38, 41) must match
 the original output byte for byte.
 
-## 4. Additional tests the port should add
+## 4. Running the tests against both implementations
+
+**Requirement (owner):** the conformance tests run headlessly against both the original
+Java interpreter and the TypeScript port, with one command:
+
+```
+bash spec/conformance/run-conformance.sh java            # original, vs. NN.expected
+JASMIN_TS_RUNNER="node <path>/run.js" \
+  bash spec/conformance/run-conformance.sh ts            # port, vs. NN.port.expected or NN.expected
+bash spec/conformance/run-conformance.sh ts programs/07-imul-forms.asm   # a subset
+```
+
+The script prints a diff for each failing program and a pass/fail count, ignores
+trailing whitespace on each line, and exits non-zero if anything fails, so CI can run
+both modes. `java` needs a JDK and git (see `reference-harness/README.md`).
+
+What the port must provide for `ts` mode:
+
+- A Node command-line entry point (e.g. `src/headless/run.ts`, built to a single
+  `run.js`) that takes one `.asm` path, runs it exactly like the Java driver in §2
+  (fresh document, 4096 bytes at offset 0, parse twice, step until past the last line,
+  an error, or 100000 steps), and prints the same four sections in the same format.
+  Messages are the port's own (with the FIX items applied), so `PARSE`, `ERROR` and the
+  register dump must match `NN.port.expected`.
+- The port has no Java exceptions, so it never prints `EXCEPTION` or `PARSE-EXCEPTION`.
+  Any such line in an expectation is replaced by a FIX in §3.
+- The entry point imports only the interpreter core (01 §2 `core/`), never Angular, the
+  DOM or browser APIs. This also keeps the core testable with a plain unit-test runner.
+- FPU values print in Java `Double.toString` format (02 §9), the same formatter the UI
+  uses.
+
+New conformance programs are added by writing `NN-name.asm`, generating
+`NN-name.expected` with the Java harness, and adding `NN-name.port.expected` plus a row
+in §3 only if a FIX changes the result.
+
+## 5. Additional tests the port should add
 
 The golden programs cover the interpreter core. The port also needs tests for:
 

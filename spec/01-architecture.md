@@ -71,7 +71,13 @@ src/app/
     settings.service.ts         localStorage-backed properties (09 §3)
     file.service.ts             open/save .asm, save/load memory (09 §4)
     help.service.ts             bundled help pages by mnemonic (09 §1)
+src/headless/
+  run.ts                        Node CLI for the conformance tests: runs one .asm file on
+                                core/ and prints the final state (08 §4); imports core/ only
 ```
+
+`core/` must stay free of Angular, DOM and browser APIs (owner requirement, 08 §4), so
+the same interpreter runs in the browser and under Node for the conformance tests.
 
 ### Arithmetic
 
