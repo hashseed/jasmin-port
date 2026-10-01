@@ -1,30 +1,47 @@
-import { ChangeDetectionStrategy, Component } from '@angular/core';
+import { ChangeDetectionStrategy, Component, DOCUMENT, effect, inject } from '@angular/core';
+import { Title } from '@angular/platform-browser';
+import { KeyboardShortcutsService } from './services/keyboard-shortcuts.service';
+import { SettingsService } from './services/settings.service';
+import { WorkspaceService } from './services/workspace.service';
+import { DocumentView } from './ui/document/document-view';
+import { HelpView } from './ui/help/help-view';
+import { MenuBar } from './ui/shell/menu-bar';
+import { TabStrip } from './ui/shell/tab-strip';
+import { Toolbar } from './ui/shell/toolbar';
 
 /**
- * M0 placeholder of the application shell (spec 02 §1): menu bar, toolbar, tab
- * strip and content area, styled with the design tokens. The real shell arrives
- * in M4.
+ * The application shell (spec 02 §1): menu bar, toolbar, tab strip and the
+ * selected tab's content. Opens the Welcome tab on start.
  */
 @Component({
   selector: 'app-root',
   changeDetection: ChangeDetectionStrategy.OnPush,
+  imports: [MenuBar, Toolbar, TabStrip, DocumentView, HelpView],
   template: `
     <header class="chrome">
-      <nav class="menu-bar" aria-label="Main menu">
-        @for (menu of menus; track menu) {
-          <span class="menu">{{ menu }}</span>
-        }
-      </nav>
-      <div class="toolbar" role="toolbar" aria-label="Toolbar"></div>
-      <div class="tab-strip" role="tablist">
-        <span class="tab" role="tab" aria-selected="true">Welcome</span>
-      </div>
+      <app-menu-bar />
+      <app-toolbar />
+      <app-tab-strip />
     </header>
     <main class="content">
-      <section class="card">
-        <h1>Jasmin</h1>
-        <p>The browser port of the TUM x86 assembler simulator is under construction.</p>
-      </section>
+      @for (tab of workspace.tabs(); track tab.id) {
+        <div
+          class="tab-panel"
+          role="tabpanel"
+          [id]="'panel-' + tab.id"
+          [attr.aria-labelledby]="'tab-' + tab.id"
+          [hidden]="tab.id !== workspace.selected()?.id"
+        >
+          @switch (tab.kind) {
+            @case ('document') {
+              <app-document-view [doc]="tab.doc" />
+            }
+            @case ('help') {
+              <app-help-view [help]="tab.help" />
+            }
+          }
+        </div>
+      }
     </main>
   `,
   styles: `
@@ -37,53 +54,43 @@ import { ChangeDetectionStrategy, Component } from '@angular/core';
       background: var(--bg-panel);
       border-bottom: 1px solid var(--border);
     }
-    .menu-bar {
-      display: flex;
-      gap: var(--space-1);
-      padding: var(--space-1) var(--space-2);
-    }
-    .menu {
-      padding: 2px var(--space-2);
-      border-radius: var(--radius-sm);
-    }
-    .toolbar {
-      height: var(--toolbar-height);
+    app-toolbar,
+    app-tab-strip {
+      display: block;
       border-top: 1px solid var(--border);
-    }
-    .tab-strip {
-      display: flex;
-      padding: 0 var(--space-2);
-      border-top: 1px solid var(--border);
-    }
-    .tab {
-      padding: var(--space-2) var(--space-3);
-      border-bottom: 2px solid var(--accent);
-      font-weight: 500;
     }
     .content {
+      position: relative;
       flex: 1;
-      overflow: auto;
-      padding: var(--space-3);
+      min-height: 0;
     }
-    .card {
-      max-width: 640px;
-      margin: 10vh auto 0;
-      padding: var(--space-4);
-      background: var(--bg-panel);
-      border: 1px solid var(--border);
-      border-radius: var(--radius);
-    }
-    h1 {
-      margin: 0 0 var(--space-2);
-      font-size: 20px;
-      color: var(--syntax-mnemonic);
-    }
-    p {
-      margin: 0;
-      color: var(--text-muted);
+    .tab-panel {
+      position: absolute;
+      inset: 0;
     }
   `,
 })
 export class App {
-  protected readonly menus = ['File', 'Edit', 'Run'];
+  protected readonly workspace = inject(WorkspaceService);
+
+  constructor() {
+    inject(KeyboardShortcutsService).install();
+    this.workspace.openHelp('welcome');
+
+    // Window title follows the selected document; selecting a help tab keeps it (spec 02 §1).
+    const title = inject(Title);
+    effect(() => {
+      const doc = this.workspace.document();
+      if (doc) title.setTitle(`Jasmin - ${doc.title()}`);
+    });
+
+    // Theme setting (spec 02 §12.2 port note): `system` follows prefers-color-scheme.
+    const settings = inject(SettingsService);
+    const root = inject(DOCUMENT).documentElement;
+    effect(() => {
+      const theme = settings.all().theme;
+      if (theme === 'system') root.removeAttribute('data-theme');
+      else root.setAttribute('data-theme', theme);
+    });
+  }
 }
