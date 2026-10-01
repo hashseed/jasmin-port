@@ -7,7 +7,7 @@
 | `conformance/programs/NN-name.asm` | 42 small programs covering every instruction family, data directives, addressing, labels, errors and runtime faults |
 | `conformance/programs/NN-name.expected` | Final machine state produced by the **original** Java interpreter (pinned commit) |
 | `conformance/mnemonics.txt` | The 230 mnemonics the original registers |
-| `reference-harness/` | `Run.java`, `LabelSource.java`, `run-original.sh`: rebuilds the original core headlessly from GitHub and runs `.asm` files |
+| `reference-harness/` | `Run.java`, `LabelSource.java`, `run-original.sh`: rebuilds the original core headlessly from GitHub and runs `.asm` files. Setup and usage: [reference-harness/README.md](reference-harness/README.md) |
 
 `bash reference-harness/run-original.sh conformance/programs/*.asm` regenerates the
 `.expected` files exactly (checked from a clean clone). Use it to settle any question

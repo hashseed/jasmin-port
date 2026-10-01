@@ -6,7 +6,7 @@
 set -euo pipefail
 HERE="$(cd "$(dirname "$0")" && pwd)"
 WORK="${WORK:-$HERE/.work}"
-if [ ! -d "$WORK/build" ]; then
+if [ ! -d "$WORK/src" ]; then
   rm -rf "$WORK"; mkdir -p "$WORK"
   git clone -q https://github.com/TUM-LRR/Jasmin.git "$WORK/Jasmin"
   git -C "$WORK/Jasmin" checkout -q 9bb04d15032cebbb4379c717f39c9030f630800b
@@ -14,8 +14,12 @@ if [ ! -d "$WORK/build" ]; then
   # Decouple the parser from the Swing document: labels are resolved through an interface.
   cp "$HERE/LabelSource.java" "$WORK/src/jasmin/core/"
   sed -i 's/public JasDocument doc;/public LabelSource doc;/; s/CommandLoader cl, JasDocument jasDoc)/CommandLoader cl, LabelSource jasDoc)/; s/^import jasmin.gui.JasDocument;//' "$WORK/src/jasmin/core/Parser.java"
-  mkdir -p "$WORK/src/jasmin/harness" "$WORK/build"
+  mkdir -p "$WORK/src/jasmin/harness"
   cp "$HERE/Run.java" "$WORK/src/jasmin/harness/"
+fi
+if [ ! -d "$WORK/build" ]; then
+  # Compiles whatever is in $WORK/src, so local edits there are picked up after deleting build/.
+  mkdir -p "$WORK/build"
   javac -nowarn -Xlint:none -d "$WORK/build" -sourcepath "$WORK/src" "$WORK"/src/jasmin/harness/Run.java "$WORK"/src/jasmin/commands/*.java
 fi
 for f in "$@"; do
