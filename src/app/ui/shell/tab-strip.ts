@@ -28,6 +28,10 @@ import { Tab, WorkspaceService } from '../../services/workspace.service';
             (click)="workspace.select(tab.id)"
           >
             {{ titleOf(tab) }}
+            @if (tab.kind === 'document' && tab.doc.modified()) {
+              <span class="modified" title="Unsaved changes" aria-hidden="true"></span>
+              <span class="hidden-text">(unsaved changes)</span>
+            }
           </button>
           <button
             type="button"
@@ -85,6 +89,25 @@ import { Tab, WorkspaceService } from '../../services/workspace.service';
       font: inherit;
       white-space: nowrap;
       cursor: pointer;
+    }
+    /* Port addition: unsaved edits since the last open or save (Q-UI-5). */
+    .modified {
+      display: inline-block;
+      width: 6px;
+      height: 6px;
+      margin-left: 6px;
+      border-radius: 50%;
+      background: currentColor;
+      vertical-align: middle;
+      opacity: 0.7;
+    }
+    .hidden-text {
+      position: absolute;
+      width: 1px;
+      height: 1px;
+      overflow: hidden;
+      clip-path: inset(50%);
+      white-space: nowrap;
     }
     .tab.selected .tab-label {
       font-weight: 500;

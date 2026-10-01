@@ -54,4 +54,61 @@ describe('WorkspaceService', () => {
     expect(doc.layout.split2()).toBe(280);
     expect(doc.layout.split1()).toBeNull();
   });
+
+  it('help tabs keep plain back/forward stacks of locations (07 Q-UI-4)', () => {
+    const help = workspace.openHelp('welcome');
+    help.navigate('welcome'); // same location: no history entry
+    expect(help.canBack()).toBe(false);
+    help.navigate('welcome', 'credits');
+    help.navigate('configuration');
+    expect(help.location()).toEqual({ page: 'configuration', anchor: null });
+    help.back();
+    expect(help.location()).toEqual({ page: 'welcome', anchor: 'credits' });
+    help.back();
+    expect(help.location()).toEqual({ page: 'welcome', anchor: null });
+    expect(help.canBack()).toBe(false);
+    help.forward();
+    help.forward();
+    expect(help.page()).toBe('configuration');
+    expect(help.canForward()).toBe(false);
+    help.back();
+    help.navigate('configuration', null);
+    help.back();
+    help.navigate('welcome'); // a new branch clears forward
+    expect(help.canForward()).toBe(false);
+    expect(help.title).toBe('Welcome');
+  });
+
+  it('tracks unsaved edits per document (port addition)', () => {
+    const a = workspace.newDocument();
+    const b = workspace.newDocument();
+    expect(a.modified()).toBe(false);
+    expect(workspace.hasUnsavedEdits()).toBe(false);
+    b.setText('nop');
+    expect(b.modified()).toBe(true);
+    expect(a.modified()).toBe(false);
+    expect(workspace.hasUnsavedEdits()).toBe(true);
+    b.markSaved();
+    expect(workspace.hasUnsavedEdits()).toBe(false);
+    b.setText('hlt');
+    workspace.close(`doc-${b.id}`);
+    expect(workspace.hasUnsavedEdits()).toBe(false);
+  });
+
+  it('cancels beforeunload only while a document has unsaved edits (Q-UI-5)', () => {
+    const unload = () => {
+      const event = new Event('beforeunload', { cancelable: true });
+      window.dispatchEvent(event);
+      return event.defaultPrevented;
+    };
+    const doc = workspace.newDocument();
+    TestBed.tick();
+    expect(unload()).toBe(false);
+    doc.setText('nop');
+    TestBed.tick();
+    expect(unload()).toBe(true);
+    doc.markSaved();
+    TestBed.tick();
+    expect(unload()).toBe(false);
+  });
 });

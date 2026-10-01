@@ -20,13 +20,15 @@ export interface KeyBinding {
 
 /**
  * Accelerators of spec 02 §2 with the browser-safe substitutes: Alt+N for New
- * (Ctrl+N cannot be intercepted), and Ctrl+Y / Ctrl+Shift+Z as extra Redo keys.
+ * (Ctrl+N cannot be intercepted), Ctrl+Y / Ctrl+Shift+Z as extra Redo keys, and
+ * Ctrl+Shift+S for Save Code As (09 §2).
  * Cut, Copy and Paste keep the editor's native keys.
  */
 export const KEY_BINDINGS: readonly KeyBinding[] = [
   { action: 'new', code: 'KeyN', alt: true, reserved: true },
   { action: 'open', code: 'KeyO', mod: true, reserved: true },
   { action: 'save', code: 'KeyS', mod: true, reserved: true },
+  { action: 'saveAs', code: 'KeyS', mod: true, shift: true, reserved: true },
   { action: 'undo', code: 'KeyZ', mod: true },
   { action: 'redo', code: 'KeyR', mod: true, reserved: true },
   { action: 'redo', code: 'KeyY', mod: true },

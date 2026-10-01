@@ -4,18 +4,11 @@ import { ConsoleView } from '../devices/console-view';
 import { GraphicsView } from '../devices/graphics-view';
 import { SevenSegmentView } from '../devices/seven-segment-view';
 import { StripLightView } from '../devices/strip-light-view';
+import { ContextHelp } from '../help/context-help';
 
 /** Bottom tabs of the center column, in the original order (spec 02 §5). */
 export const BOTTOM_TABS = ['Help', '7-Segment', 'StripLight', 'Console', 'Graphics'] as const;
 type BottomTab = (typeof BOTTOM_TABS)[number];
-
-const MILESTONE: Record<BottomTab, string> = {
-  Help: 'M6',
-  '7-Segment': 'M7',
-  StripLight: 'M7',
-  Console: 'M7',
-  Graphics: 'M7',
-};
 
 /**
  * Device tabs fill the pane edge to edge (spec 06: scaled and centered). Their
@@ -30,13 +23,14 @@ const DEVICE_TABS: ReadonlySet<BottomTab> = new Set([
 
 /**
  * The bottom tab pane with its tabs on the left edge as stacked horizontal
- * labels. The device tabs show the document's I/O devices (spec 06); only the
- * selected one is rendered, while the document's DeviceSet keeps their state.
+ * labels. `Help` is the context help pane (spec 02 §11); the device tabs show the
+ * document's I/O devices (spec 06). Only the selected one is rendered, while the
+ * document's DeviceSet keeps their state.
  */
 @Component({
   selector: 'app-bottom-pane',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [SevenSegmentView, StripLightView, ConsoleView, GraphicsView],
+  imports: [ContextHelp, SevenSegmentView, StripLightView, ConsoleView, GraphicsView],
   template: `
     <div class="side" role="tablist" aria-orientation="vertical" aria-label="Tools">
       @for (tab of tabs; track tab) {
@@ -82,8 +76,9 @@ const DEVICE_TABS: ReadonlySet<BottomTab> = new Set([
           }
         }
         @default {
-          <p class="placeholder">{{ selected() }} (placeholder · {{ milestone[selected()] }})</p>
-          <p class="placeholder">No help available for current context.</p>
+          @defer (on immediate) {
+            <app-context-help [doc]="doc()" />
+          }
         }
       }
     </div>
@@ -135,10 +130,6 @@ const DEVICE_TABS: ReadonlySet<BottomTab> = new Set([
       padding: 0;
       overflow: hidden;
     }
-    .placeholder {
-      margin: 0 0 var(--space-2);
-      color: var(--text-muted);
-    }
   `,
 })
 export class BottomPane {
@@ -146,6 +137,5 @@ export class BottomPane {
   readonly doc = input.required<DocumentStore>();
   protected readonly deviceTabs = DEVICE_TABS;
   protected readonly tabs = BOTTOM_TABS;
-  protected readonly milestone = MILESTONE;
   protected readonly selected = signal<BottomTab>('Help');
 }
