@@ -4,7 +4,7 @@
 
 | Path | Contents |
 |---|---|
-| `conformance/programs/NN-name.asm` | 42 small programs covering every instruction family, data directives, addressing, labels, errors and runtime faults |
+| `conformance/programs/NN-name.asm` | 44 small programs covering every instruction family, data directives, addressing, labels, errors and runtime faults. 43 and 44 are the only tests in the original repository (`tests/carry-sub_add.asm`, `tests/overflow-sub_add.asm`, copied unchanged): 16 8-bit ADD/SUB cases each, recording CF or OF as bits in BX. Their final comment states the intended BX, which the original matches (`0xD48E`, `0x4218`) and which equals real x86 |
 | `conformance/programs/NN-name.expected` | Final machine state produced by the **original** Java interpreter (pinned commit) |
 | `conformance/programs/NN-name.port.expected` | Expected output of the **port**, only for the 22 programs where an owner-approved fix changes the result (§3). Other programs share `NN-name.expected` |
 | `conformance/run-conformance.sh` | Runs the programs against either implementation and compares (§4) |
@@ -76,7 +76,7 @@ patched in (correct `AF` formula; `PUSH`/`POP` default size 4), so they are exac
 `16-stack` uses `push word 0x1234` so that its output is the same before and after
 Q-I-13.
 
-All other programs (01, 04-06, 08-10, 12, 14-17, 19, 22-24, 28-29, 38, 41) must match
+All other programs (01, 04-06, 08-10, 12, 14-17, 19, 22-24, 28-29, 38, 41, 43, 44) must match
 the original output byte for byte.
 
 ## 4. Running the tests against both implementations

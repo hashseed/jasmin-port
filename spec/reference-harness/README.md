@@ -81,7 +81,7 @@ cd spec/conformance/programs
 for f in *.asm; do bash ../../reference-harness/run-original.sh "$f" > "${f%.asm}.expected"; done
 ```
 
-This reproduces all 42 `.expected` files byte for byte. They are the **original's**
+This reproduces all 44 `.expected` files byte for byte. They are the **original's**
 output. Where the port intentionally differs, `NN.port.expected` holds the port's
 expectation and 08 §3 explains the changes; those files are maintained by hand.
 
