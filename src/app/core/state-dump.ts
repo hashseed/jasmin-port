@@ -1,8 +1,23 @@
+import { DataSpace } from './data-space';
 import { formatJavaDouble } from './java-double';
 import { DUMP_FLAG_NAMES, MachineState, REGISTER_NAMES } from './machine-state';
 
 const hex = (value: number, digits: number) =>
   (value >>> 0).toString(16).toUpperCase().padStart(digits, '0');
+
+/** A plain snapshot of a DataSpace for the dump. */
+export function machineStateOf(dsp: DataSpace): MachineState {
+  const registers = Object.fromEntries(
+    REGISTER_NAMES.map((name) => [name, dsp.registers.get(dsp.getRegisterArgument(name)!)]),
+  ) as MachineState['registers'];
+  return {
+    offset: dsp.offset,
+    memory: dsp.memory.bytes,
+    registers,
+    flags: dsp.flags,
+    fpu: { top: dsp.fpu.top, registers: [...dsp.fpu.registers] },
+  };
+}
 
 /**
  * The final-state dump printed by the headless runner, in the format of the Java
