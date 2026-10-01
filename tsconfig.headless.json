@@ -5,5 +5,5 @@
     "noEmit": true,
     "types": ["node"]
   },
-  "include": ["src/app/core/**/*.ts", "src/headless/**/*.ts"]
+  "include": ["src/app/core/**/*.ts", "src/app/devices/**/*.ts", "src/headless/**/*.ts"]
 }
