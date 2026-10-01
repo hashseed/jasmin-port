@@ -8,6 +8,7 @@ describe('keyboard shortcuts (spec 02 §2)', () => {
     expect(matchBinding(key('KeyN', { altKey: true }))?.action).toBe('new');
     expect(matchBinding(key('KeyO', { ctrlKey: true }))?.action).toBe('open');
     expect(matchBinding(key('KeyS', { metaKey: true }))?.action).toBe('save');
+    expect(matchBinding(key('KeyS', { ctrlKey: true, shiftKey: true }))?.action).toBe('saveAs');
     expect(matchBinding(key('KeyZ', { ctrlKey: true }))?.action).toBe('undo');
     expect(matchBinding(key('KeyR', { ctrlKey: true }))?.action).toBe('redo');
     expect(matchBinding(key('KeyY', { ctrlKey: true }))?.action).toBe('redo');

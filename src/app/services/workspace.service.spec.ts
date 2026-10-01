@@ -54,4 +54,37 @@ describe('WorkspaceService', () => {
     expect(doc.layout.split2()).toBe(280);
     expect(doc.layout.split1()).toBeNull();
   });
+
+  it('tracks unsaved edits per document (port addition)', () => {
+    const a = workspace.newDocument();
+    const b = workspace.newDocument();
+    expect(a.modified()).toBe(false);
+    expect(workspace.hasUnsavedEdits()).toBe(false);
+    b.setText('nop');
+    expect(b.modified()).toBe(true);
+    expect(a.modified()).toBe(false);
+    expect(workspace.hasUnsavedEdits()).toBe(true);
+    b.markSaved();
+    expect(workspace.hasUnsavedEdits()).toBe(false);
+    b.setText('hlt');
+    workspace.close(`doc-${b.id}`);
+    expect(workspace.hasUnsavedEdits()).toBe(false);
+  });
+
+  it('cancels beforeunload only while a document has unsaved edits (Q-UI-5)', () => {
+    const unload = () => {
+      const event = new Event('beforeunload', { cancelable: true });
+      window.dispatchEvent(event);
+      return event.defaultPrevented;
+    };
+    const doc = workspace.newDocument();
+    TestBed.tick();
+    expect(unload()).toBe(false);
+    doc.setText('nop');
+    TestBed.tick();
+    expect(unload()).toBe(true);
+    doc.markSaved();
+    TestBed.tick();
+    expect(unload()).toBe(false);
+  });
 });

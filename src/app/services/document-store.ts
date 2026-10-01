@@ -1,5 +1,6 @@
-import { Signal, WritableSignal, signal } from '@angular/core';
+import { Signal, WritableSignal, computed, signal } from '@angular/core';
 import { MachineSession, SessionEvent } from '../core';
+import type { FileHandle } from './file-access';
 
 /**
  * What the shell needs from a document's editor: the Edit menu commands. The
@@ -36,6 +37,15 @@ export class DocumentStore {
   readonly id = nextDocumentId++;
   readonly title: WritableSignal<string>;
   readonly text = signal('');
+  /** The text as last opened or saved; `''` for a new document. */
+  private readonly savedText = signal('');
+  /** The editor text differs from the last opened or saved file (port addition, Q-UI-5). */
+  readonly modified: Signal<boolean> = computed(() => this.text() !== this.savedText());
+
+  /** The code file this document was opened from or saved to (File System Access API). */
+  codeHandle: FileHandle | null = null;
+  /** The memory file last saved or loaded in this document. */
+  memoryHandle: FileHandle | null = null;
 
   private readonly runningState = signal(false);
   private readonly errorState = signal<string | null>(null);
@@ -70,6 +80,7 @@ export class DocumentStore {
   ) {
     this.title = signal(title);
     this.text.set(session.program.text);
+    this.savedText.set(this.text());
     this.layout = {
       split1: signal(layout.split1 ?? null),
       split2: signal(layout.split2 ?? null),
@@ -85,6 +96,11 @@ export class DocumentStore {
     this.session.setText(text);
     this.text.set(this.session.program.text);
     this.versionState.update((v) => v + 1);
+  }
+
+  /** Records `text` (by default the current text) as the file's content after Open or Save Code. */
+  markSaved(text = this.text()): void {
+    this.savedText.set(text);
   }
 
   /**

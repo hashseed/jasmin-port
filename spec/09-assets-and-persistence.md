@@ -55,9 +55,27 @@ shipped; the samples may be offered as examples.
 
 - New documents are titled `new document` (02 §2). Opening or saving `.asm` sets the
   tab title to the file name without path; the window title follows (02 §1).
-- Save Code is always a "save as" dialog in the original. The port keeps that, but
-  passes the document's remembered file handle (File System Access API) as the
-  picker's suggestion, and falls back to a download named after the tab title.
+- Save Code is always a "save as" dialog in the original. *Port note:* each document
+  remembers the file it was opened from or last saved to (a File System Access API
+  handle). Save Code writes back to that file without asking; a document without one
+  (a new document) gets the save dialog, starting in the last directory and suggesting
+  `<tab title>.asm`. **Ctrl+Shift+S** (Save Code As, keyboard only, no menu item)
+  always shows the save dialog, suggesting the remembered file. Without the File
+  System Access API (`<input type=file>` and downloads), Save Code always downloads a
+  file named after the tab title with `.asm` appended, and the tab takes that name.
+  The picker cannot rename the chosen file, so on that path `.asm` is only appended to
+  the suggestion; the tab takes the name actually chosen.
+- Save Memory always shows the save dialog (or downloads), suggesting the document's
+  last memory file, else `lastpath.mem`, else `<tab title without .asm>.mem`. Load
+  Memory remembers the loaded file the same way. Load Memory with no document
+  selected does nothing.
+- *Port addition:* a document is *modified* when its text differs from the text last
+  opened or saved; its tab shows a small dot after the title (screen readers: "(unsaved
+  changes)"). The window title does not change. While any open document is modified
+  the page registers a `beforeunload` handler (07 Q-UI-5); closing a tab still never
+  prompts.
+- I/O errors (and `Not a Jasmin memory file.`) appear in an in-app modal message with
+  the heading `Message` and an `OK` button (02 §13).
 
 ## 3. Settings
 
