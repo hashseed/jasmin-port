@@ -1,0 +1,46 @@
+name: Deploy to GitHub Pages
+
+# Optional and manual: builds the static site and publishes it with GitHub Pages.
+# Before the first run, enable Pages for the repository with "GitHub Actions" as
+# the source (Settings > Pages; a private repository needs a paid plan). The site is
+# served from https://<owner>.github.io/<repository>/, so the base href is the
+# repository name; change BASE_HREF for a custom domain (use "/").
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    env:
+      BASE_HREF: /${{ github.event.repository.name }}/
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+      - run: npm ci
+      - run: npm run build -- --base-href "$BASE_HREF"
+      - uses: actions/configure-pages@v5
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: dist/jasmin-port/browser
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4

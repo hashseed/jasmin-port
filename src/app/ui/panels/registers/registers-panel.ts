@@ -88,17 +88,18 @@ import { RegisterView, registerViews, writeRegister } from './register-view';
     }
     .reg {
       display: grid;
-      grid-template-columns: 18px 40px 1fr;
+      grid-template-columns: 24px 40px 1fr;
       align-items: center;
       min-height: 24px;
     }
     .reg.open {
-      grid-template-columns: 18px 1fr;
+      grid-template-columns: 24px 1fr;
       align-items: start;
     }
+    /* 24 px: the minimum target size of WCAG 2.5.8. */
     .toggle {
-      width: 18px;
-      height: 22px;
+      width: 24px;
+      height: 24px;
       padding: 0;
       border: 0;
       border-radius: var(--radius-sm);
@@ -108,7 +109,7 @@ import { RegisterView, registerViews, writeRegister } from './register-view';
       cursor: pointer;
     }
     .reg.open .toggle {
-      margin-top: 15px;
+      margin-top: 14px;
     }
     .toggle:hover {
       background: var(--bg-hover);
@@ -159,6 +160,10 @@ import { RegisterView, registerViews, writeRegister } from './register-view';
     }
     .label.e {
       font-weight: 600;
+    }
+    /* Full text color on the tinted name cells, for contrast (WCAG AA). */
+    .label.named {
+      color: var(--text);
     }
     .label.x {
       grid-column: span 2;

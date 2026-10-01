@@ -2,18 +2,16 @@ import { ChangeDetectionStrategy, Component, input } from '@angular/core';
 
 /**
  * A flat panel card with a small uppercase section header (docs/plan.md,
- * "Surfaces"). In M4 the panels inside are placeholders; `milestone` marks them.
+ * "Surfaces"). The heading names the card's region; with `headerHidden` it is
+ * kept for assistive technology only (the original's editor has no title).
  */
 @Component({
   selector: 'app-panel-card',
   changeDetection: ChangeDetectionStrategy.OnPush,
   host: { role: 'region', '[attr.aria-label]': 'heading()' },
   template: `
-    <header class="panel-header">
+    <header class="panel-header" [class.visually-hidden]="headerHidden()">
       <h2>{{ heading() }}</h2>
-      @if (milestone(); as m) {
-        <span class="badge">placeholder · {{ m }}</span>
-      }
     </header>
     <div class="panel-body"><ng-content /></div>
   `,
@@ -44,11 +42,6 @@ import { ChangeDetectionStrategy, Component, input } from '@angular/core';
       text-transform: uppercase;
       color: var(--text-muted);
     }
-    .badge {
-      font-size: 11px;
-      color: var(--text-muted);
-      opacity: 0.8;
-    }
     .panel-body {
       display: flex;
       flex-direction: column;
@@ -61,5 +54,6 @@ import { ChangeDetectionStrategy, Component, input } from '@angular/core';
 })
 export class PanelCard {
   readonly heading = input.required<string>();
-  readonly milestone = input<string | null>(null);
+  /** Hides the header visually; the region keeps its accessible name. */
+  readonly headerHidden = input(false);
 }

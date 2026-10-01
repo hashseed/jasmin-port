@@ -32,8 +32,8 @@ export const SPLIT_DEFAULTS: Record<SplitName, (size: number) => number> = {
 
 /**
  * One document tab (spec 02 §5): four nested split panes around the editor.
- * Registers with flags, FPU and Memory are the M5 panels; the bottom tabs are
- * still placeholders.
+ * Registers with flags and FPU on the left, the editor over the bottom tabs in
+ * the center, Memory on the right.
  */
 @Component({
   selector: 'app-document-view',
@@ -94,7 +94,7 @@ export const SPLIT_DEFAULTS: Record<SplitName, (size: number) => number> = {
           [defaultPosition]="defaults.split4"
           (committed)="persist('split4', $event)"
         >
-          <app-panel-card first heading="Editor" class="editor">
+          <app-panel-card first heading="Editor" class="editor" [headerHidden]="true">
             @defer (on immediate) {
               <app-code-editor [doc]="doc()" />
             }
@@ -120,6 +120,11 @@ export const SPLIT_DEFAULTS: Record<SplitName, (size: number) => number> = {
     }
     .editor {
       --panel-pad: 0;
+    }
+    /* The editor's focus indicator (CodeMirror's own outline is off). */
+    .editor:focus-within {
+      border-color: var(--focus-ring);
+      box-shadow: 0 0 0 1px var(--focus-ring);
     }
     .registers {
       --panel-pad: var(--space-1) var(--space-3) var(--space-3);

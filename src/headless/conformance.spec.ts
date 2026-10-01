@@ -13,7 +13,7 @@ import {
 const programs = join(__dirname, '../../spec/conformance/programs');
 
 /** Every conformance program, by base name. */
-const PROGRAMS = readdirSync(programs)
+const PROGRAMS: string[] = readdirSync(programs)
   .filter((f) => f.endsWith('.asm'))
   .map((f) => f.slice(0, -'.asm'.length))
   .sort();
@@ -25,7 +25,7 @@ describe('conformance programs', () => {
     );
   });
 
-  it.each(PROGRAMS)('%s', (name) => {
+  it.each(PROGRAMS)('%s', (name: string) => {
     const port = join(programs, `${name}.port.expected`);
     const expected = readFileSync(
       existsSync(port) ? port : join(programs, `${name}.expected`),
@@ -41,7 +41,7 @@ describe('conformance programs', () => {
     );
   });
 
-  it.each(PROGRAMS)('%s gives the same result with Run as with Step', (name) => {
+  it.each(PROGRAMS)('%s gives the same result with Run as with Step', (name: string) => {
     const source = readFileSync(join(programs, `${name}.asm`), 'utf8');
     const dsp = new DataSpace(4096, 0);
     const program = new Program(dsp);

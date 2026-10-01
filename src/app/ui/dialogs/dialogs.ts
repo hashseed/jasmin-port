@@ -12,6 +12,7 @@ import { firstValueFrom } from 'rxjs';
 
 interface DialogData {
   readonly kind: 'prompt' | 'choice' | 'message';
+  readonly id: string;
   readonly title: string;
   readonly message: string;
   /** prompt: the initial text. */
@@ -26,17 +27,18 @@ type DialogResult = string | number | true;
 let nextId = 1;
 
 /**
- * The small modal dialogs of the original's `JOptionPane` (spec 02 §13): an input
- * prompt, a choice between buttons plus Cancel, and a message with OK. Built on the
- * CDK dialog, styled like our menus.
+ * The app's one modal dialog, replacing Swing's `JOptionPane` (spec 02 §13): a
+ * message with OK (I/O errors, `Not a Jasmin memory file.`, device validation), an
+ * input prompt, and a choice between buttons plus Cancel (device menus, spec 06).
+ * Texts are passed in verbatim. The CDK container carries the role and labels: the
+ * dialog is named by its message, so assistive technology reads the question.
  */
 @Component({
-  selector: 'app-simple-dialog',
+  selector: 'app-dialog',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  host: { class: 'simple-dialog' },
   template: `
-    <h2 class="title" [id]="titleId">{{ data.title }}</h2>
-    <p class="message" [id]="messageId">{{ data.message }}</p>
+    <h2 class="title">{{ data.title }}</h2>
+    <p class="message" [id]="data.id + '-message'">{{ data.message }}</p>
     @switch (data.kind) {
       @case ('prompt') {
         <form (submit)="$event.preventDefault(); close(field.value)">
@@ -46,7 +48,7 @@ let nextId = 1;
             type="text"
             spellcheck="false"
             autocomplete="off"
-            [attr.aria-labelledby]="messageId"
+            [attr.aria-labelledby]="data.id + '-message'"
             [value]="data.value ?? ''"
           />
           <div class="buttons">
@@ -74,7 +76,7 @@ let nextId = 1;
     :host {
       display: block;
       min-width: 320px;
-      max-width: 480px;
+      max-width: min(480px, calc(100vw - 32px));
       padding: var(--space-4);
       background: var(--bg-panel);
       color: var(--text);
@@ -86,21 +88,20 @@ let nextId = 1;
     }
     .title {
       margin: 0 0 var(--space-2);
-      font-size: 12px;
+      font-size: 14px;
       font-weight: 600;
-      letter-spacing: 0.04em;
-      text-transform: uppercase;
-      color: var(--text-muted);
     }
     .message {
-      margin: 0 0 var(--space-3);
+      margin: 0 0 var(--space-4);
+      white-space: pre-wrap;
+      overflow-wrap: anywhere;
     }
     .field {
       display: block;
       width: 100%;
       margin-bottom: var(--space-3);
       padding: 5px var(--space-2);
-      border: 1px solid var(--border);
+      border: 1px solid var(--border-strong);
       border-radius: var(--radius-sm);
       background: var(--bg-subtle);
       color: var(--text);
@@ -116,7 +117,7 @@ let nextId = 1;
     .button {
       min-width: 72px;
       padding: 5px var(--space-3);
-      border: 1px solid var(--border);
+      border: 1px solid var(--border-strong);
       border-radius: var(--radius-sm);
       background: var(--bg-panel);
       color: var(--text);
@@ -129,23 +130,24 @@ let nextId = 1;
     .button.primary {
       border-color: var(--accent);
       background: var(--accent);
-      color: var(--bg-panel);
+      color: var(--on-accent);
+      font-weight: 500;
+    }
+    .button:focus-visible,
+    .field:focus-visible {
+      outline: 2px solid var(--focus-ring);
+      outline-offset: 2px;
     }
   `,
 })
-export class SimpleDialog {
+export class AppDialog {
   protected readonly data = inject<DialogData>(DIALOG_DATA);
   private readonly ref = inject<DialogRef<DialogResult>>(DialogRef);
-  private readonly fieldRef = viewChild.required<ElementRef<HTMLInputElement>>('field');
-  private readonly id = nextId++;
-  readonly titleId = `simple-dialog-title-${this.id}`;
-  protected readonly messageId = `simple-dialog-message-${this.id}`;
+  private readonly fieldRef = viewChild<ElementRef<HTMLInputElement>>('field');
 
   constructor() {
     // Like JOptionPane, the prompt starts with its initial text selected.
-    afterNextRender(() => {
-      if (this.data.kind === 'prompt') this.fieldRef().nativeElement.select();
-    });
+    afterNextRender(() => this.fieldRef()?.nativeElement.select());
   }
 
   protected close(result?: DialogResult): void {
@@ -153,9 +155,15 @@ export class SimpleDialog {
   }
 }
 
+/** Opens the app's modal dialogs (Angular CDK dialog). */
 @Injectable({ providedIn: 'root' })
 export class DialogService {
   private readonly dialog = inject(Dialog);
+
+  /** A message with OK (`JOptionPane.showMessageDialog`); resolves when closed. */
+  async message(message: string, title = 'Message'): Promise<void> {
+    await this.open({ kind: 'message', title, message });
+  }
 
   /** An input dialog (`JOptionPane.showInputDialog`); resolves to null when cancelled. */
   async prompt(message: string, value: string): Promise<string | null> {
@@ -176,16 +184,15 @@ export class DialogService {
     return typeof result === 'number' ? result : null;
   }
 
-  /** A message with OK (`JOptionPane.showMessageDialog`). */
-  async message(message: string): Promise<void> {
-    await this.open({ kind: 'message', title: 'Message', message });
-  }
-
-  private open(data: DialogData): Promise<DialogResult | undefined> {
-    const ref = this.dialog.open<DialogResult, DialogData, SimpleDialog>(SimpleDialog, {
-      data,
-      ariaLabel: data.message,
+  private open(data: Omit<DialogData, 'id'>): Promise<DialogResult | undefined> {
+    const id = `app-dialog-${nextId++}`;
+    const ref = this.dialog.open<DialogResult, DialogData, AppDialog>(AppDialog, {
+      data: { ...data, id },
+      role: data.kind === 'message' ? 'alertdialog' : 'dialog',
+      ariaModal: true,
+      ariaLabelledBy: `${id}-message`,
       ariaDescribedBy: null,
+      hasBackdrop: true,
       autoFocus: 'first-tabbable',
       restoreFocus: true,
     });

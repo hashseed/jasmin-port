@@ -1,6 +1,6 @@
 import { TestBed } from '@angular/core/testing';
 import { NOT_A_MEMORY_FILE } from '../core';
-import { DialogService } from '../ui/dialogs/message-dialog';
+import { DialogService } from '../ui/dialogs/dialogs';
 import {
   FILE_ACCESS,
   FileAccess,

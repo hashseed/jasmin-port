@@ -1,7 +1,7 @@
 import { ChangeDetectionStrategy, Component, input } from '@angular/core';
+import { PORT_VERSION } from '../../version';
 
-/** The web port's version, shown in the credits (spec 02 §12.1); package.json `version`. */
-export const PORT_VERSION = '0.0.0';
+export { PORT_VERSION };
 export const PORT_URL = 'https://github.com/hashseed/jasmin-port';
 
 /** Credits of `Welcome.htm`, in its order (spec 09 §5). */

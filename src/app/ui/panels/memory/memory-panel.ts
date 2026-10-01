@@ -72,6 +72,7 @@ export const MEMORY_ROW_HEIGHT = 20;
             role="row"
             [class.changed]="row.changed"
             [class.stack]="row.stack"
+            [class.colored]="row.color !== null"
             [style.background]="row.color"
             [attr.data-address]="row.address"
           >
@@ -165,7 +166,10 @@ export const MEMORY_ROW_HEIGHT = 20;
     .address {
       color: var(--text-muted);
     }
-    .changed .address {
+    /* Full text color on tinted rows, for contrast (WCAG AA). */
+    .changed .address,
+    .stack .address,
+    .colored .address {
       color: var(--text);
     }
     input {

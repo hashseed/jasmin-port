@@ -18,7 +18,7 @@ import {
   parseDeviceAddress,
 } from '../../devices';
 import { DocumentStore } from '../../services/document-store';
-import { DialogService } from '../common/dialogs';
+import { DialogService } from '../dialogs/dialogs';
 
 export interface DeviceMenuItem {
   readonly label: string;
