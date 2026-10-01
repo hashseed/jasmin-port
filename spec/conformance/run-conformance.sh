@@ -14,7 +14,9 @@ set -uo pipefail
 HERE="$(cd "$(dirname "$0")" && pwd)"
 IMPL="${1:-}"; shift || true
 case "$IMPL" in
-  java) RUNNER=(bash "$HERE/../reference-harness/run-original.sh") ;;
+  java)
+    RUNNER=(bash "$HERE/../reference-harness/run-original.sh")
+    "${RUNNER[@]}" --check || exit 2 ;;
   ts)
     if [ -z "${JASMIN_TS_RUNNER:-}" ]; then
       echo "Set JASMIN_TS_RUNNER to the port's headless runner, e.g. 'node dist/headless/run.js'" >&2

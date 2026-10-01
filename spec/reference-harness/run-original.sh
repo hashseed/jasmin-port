@@ -6,6 +6,14 @@
 set -euo pipefail
 HERE="$(cd "$(dirname "$0")" && pwd)"
 WORK="${WORK:-$HERE/.work}"
+# Use $JAVA_HOME if set, otherwise java/javac from PATH.
+if [ -n "${JAVA_HOME:-}" ]; then PATH="$JAVA_HOME/bin:$PATH"; fi
+if ! command -v java >/dev/null || ! command -v javac >/dev/null; then
+  echo "run-original.sh: no JDK found (need java and javac on PATH, or JAVA_HOME set)." >&2
+  echo "See spec/reference-harness/README.md, section Requirements." >&2
+  exit 3
+fi
+if [ "${1:-}" = "--check" ]; then exit 0; fi
 if [ ! -d "$WORK/src" ]; then
   rm -rf "$WORK"; mkdir -p "$WORK"
   git clone -q https://github.com/TUM-LRR/Jasmin.git "$WORK/Jasmin"

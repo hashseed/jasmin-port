@@ -11,8 +11,9 @@ and the I/O devices are not exercised.
 ## Requirements
 
 - `git` and network access to github.com (the script clones the original on first use)
-- A JDK (tested with OpenJDK 21). On Debian or Ubuntu,
-  install `openjdk-21-jdk-headless`.
+- A JDK (tested with OpenJDK 21): `java` and `javac` on `PATH`, or `JAVA_HOME` pointing
+  at the JDK. On Debian or Ubuntu, install `openjdk-21-jdk-headless`. Without one, the
+  scripts stop with `no JDK found`.
 - `bash` and GNU `sed`. On macOS, install `gnu-sed` and put it first on `PATH`, because
   BSD `sed -i` takes different arguments.
 
@@ -104,8 +105,11 @@ reused), or use a portable JDK without root:
 ```
 curl -sSL -o jdk.tgz "https://api.adoptium.net/v3/binary/latest/21/ga/linux/x64/jdk/hotspot/normal/eclipse"
 tar xzf jdk.tgz && rm jdk.tgz
-export PATH="$PWD/$(ls -d jdk-21*/ | head -1)bin:$PATH"
+export JAVA_HOME="$PWD/$(ls -d jdk-21*/ | head -1)"
 ```
+
+`JAVA_HOME` only lasts for the current shell. Add the export line to `~/.bashrc` to
+keep it.
 
 Claude Code's sandbox proxy times out on github.com, so the first run (the clone)
 has to run outside the sandbox. Later runs need no network.
