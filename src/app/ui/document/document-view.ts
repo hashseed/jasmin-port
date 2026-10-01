@@ -4,7 +4,7 @@ import { DocumentStore, SplitName } from '../../services/document-store';
 import { SettingsService } from '../../services/settings.service';
 import { PanelCard } from '../common/panel-card';
 import { SplitPane } from '../common/split-pane';
-import { PlainEditor } from '../editor/plain-editor';
+import { CodeEditor } from '../editor/code-editor';
 import { BottomPane } from './bottom-pane';
 
 /** Default divider locations of spec 02 §5, from the container size in px. */
@@ -27,7 +27,7 @@ export const SPLIT_DEFAULTS: Record<SplitName, (size: number) => number> = {
 @Component({
   selector: 'app-document-view',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [SplitPane, PanelCard, PlainEditor, BottomPane],
+  imports: [SplitPane, PanelCard, CodeEditor, BottomPane],
   template: `
     @let layout = doc().layout;
     <app-split-pane
@@ -85,12 +85,11 @@ export const SPLIT_DEFAULTS: Record<SplitName, (size: number) => number> = {
           [defaultPosition]="defaults.split4"
           (committed)="persist('split4', $event)"
         >
-          <div first class="stack">
-            <app-panel-card heading="Editor" milestone="M5" class="editor">
-              <app-plain-editor [doc]="doc()" />
-            </app-panel-card>
-            <div class="error-line" role="status" aria-label="Error">{{ doc().error() }}</div>
-          </div>
+          <app-panel-card first heading="Editor" class="editor">
+            @defer (on immediate) {
+              <app-code-editor [doc]="doc()" />
+            }
+          </app-panel-card>
           <app-bottom-pane second [idPrefix]="'bottom-' + doc().id" />
         </app-split-pane>
         <app-panel-card second heading="Memory" milestone="M5" />
@@ -140,11 +139,6 @@ export const SPLIT_DEFAULTS: Record<SplitName, (size: number) => number> = {
     .flags .set {
       color: var(--text);
       font-weight: 600;
-    }
-    .error-line {
-      min-height: 20px;
-      padding: 0 var(--space-3);
-      color: var(--syntax-error);
     }
   `,
 })
