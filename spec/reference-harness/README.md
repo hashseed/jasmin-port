@@ -94,3 +94,18 @@ To measure the effect of a proposed fix (as was done for Q-F-1 and Q-I-13), edit
 Java files under `.work/src/`, delete `.work/build`, and rerun. The script then
 recompiles the edited sources without cloning again. Then diff the results against the
 `.expected` files.
+
+## In the devenv container
+
+The devenv image has no JDK. Either add `openjdk-21-jdk-headless` to the Dockerfile
+as its own `RUN apt-get ...` layer after the n8n install (so the cached n8n layer is
+reused), or use a portable JDK without root:
+
+```
+curl -sSL -o jdk.tgz "https://api.adoptium.net/v3/binary/latest/21/ga/linux/x64/jdk/hotspot/normal/eclipse"
+tar xzf jdk.tgz && rm jdk.tgz
+export PATH="$PWD/$(ls -d jdk-21*/ | head -1)bin:$PATH"
+```
+
+Claude Code's sandbox proxy times out on github.com, so the first run (the clone)
+has to run outside the sandbox. Later runs need no network.
