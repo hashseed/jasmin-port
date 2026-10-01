@@ -17,7 +17,7 @@ Quirk IDs (`Q-...`) refer to [07-known-quirks.md](07-known-quirks.md).
 | Mnemonics | Operands | Semantics | Flags | Notes |
 |---|---|---|---|---|
 | `MOV` | dest r/m; src r/m/imm/short string/variable/label/constant | dest := src | none | src size must not exceed dest (`Operand too large...`); register sizes must match (`Size mismatch`). Storing a label marks the cell (04 §4). A third operand is silently accepted. |
-| `CMOVcc` (cc from §11, 30 forms: `CMOVA CMOVAE CMOVB CMOVBE CMOVC CMOVE CMOVG CMOVGE CMOVL CMOVLE CMOVNA CMOVNAE CMOVNB CMOVNBE CMOVNC CMOVNE CMOVNG CMOVNGE CMOVNL CMOVNLE CMOVNO CMOVNP CMOVNS CMOVNZ CMOVO CMOVP CMOVPE CMOVPO CMOVS CMOVZ`) | same as MOV | if cc: dest := src | none | Accepts immediates and 8-bit, unlike real x86 (KEEP). |
+| `CMOVcc` (cc from §11, 30 forms: `CMOVA CMOVAE CMOVB CMOVBE CMOVC CMOVE CMOVG CMOVGE CMOVL CMOVLE CMOVNA CMOVNAE CMOVNB CMOVNBE CMOVNC CMOVNE CMOVNG CMOVNGE CMOVNL CMOVNLE CMOVNO CMOVNP CMOVNS CMOVNZ CMOVO CMOVP CMOVPE CMOVPO CMOVS CMOVZ`) | same as MOV | if cc: dest := src | none | Accepts immediates and 8-bit, unlike real x86 (07 Q-I-16, decision pending). |
 | `XCHG` | (m, r) or (r, r/m), equal sizes | swap | none | |
 | `MOVZX` | r16 <- r8/m8; r32 <- r8/r16/m8/m16 | zero-extend | none | Q-I-6 (validation gap) |
 | `MOVSX` | as MOVZX | sign-extend | none | *signed*. Q-I-6 |
@@ -81,7 +81,7 @@ must be CL or an 8-bit immediate` (shifts) / `second register must be CL...` (ro
 | `JMP` | label, r, m, imm, constant | EIP := target line | `jmp 3` jumps to line 3 |
 | `Jcc`: `JA JAE JB JBE JC JE JG JGE JL JLE JNA JNAE JNB JNBE JNC JNE JNG JNGE JNL JNLE JNO JNP JNS JNZ JO JP JPE JPO JS JZ` | as JMP | if cc (§11): EIP := target | |
 | `JCXZ` / `JECXZ` | as JMP | if CX == 0 / ECX == 0: EIP := target | |
-| `LOOP` | as JMP | ECX := ECX - 1; if ECX != 0: EIP := target | always ECX (help text says CX); flags kept |
+| `LOOP` | as JMP | ECX := ECX - 1; if ECX != 0: EIP := target | always ECX; flags kept. The port's help pages say ECX (07 Q-I-14) |
 | `LOOPE` `LOOPZ` / `LOOPNE` `LOOPNZ` | as JMP | ECX -= 1; jump if ECX != 0 and ZF / !ZF | |
 | `CALL` | label, r, m, imm (not constant) | push EIP (4 bytes); EIP := target | |
 | `RET` | none | pop 4 bytes into EIP | no `RET imm16` |
@@ -92,8 +92,8 @@ A target beyond the last line simply ends the program on the next step/run itera
 
 | Mnemonics | Operands | Semantics | Notes |
 |---|---|---|---|
-| `PUSH` | r16/r32, m16/m32, imm, label, variable, constant; size 2-4 | ESP -= size; [ESP] := value | default 2: `push 5` pushes a **word**; use `push dword 5`. `push al`: `Operand must be at least 2 bytes large` |
-| `POP` | r16/r32, m16/m32; size 2-4 | value := [ESP]; check vs EBP (04 §6); ESP += size | |
+| `PUSH` | r16/r32, m16/m32, imm, label, variable, constant; size 2-4 | ESP -= size; [ESP] := value | default 4 (07 Q-I-13): `push 5` and `push [x]` push a **dword**; `push word 5` pushes a word. `push al`: `Operand must be at least 2 bytes large` |
+| `POP` | r16/r32, m16/m32; size 2-4, default 4 (`pop [x]` pops a dword) | value := [ESP]; check vs EBP (04 §6); ESP += size | |
 | `PUSHA` | none | push AX, CX, DX, BX, original SP, BP, SI, DI (16-bit each) | |
 | `POPA` | none | pop DI, SI, BP, (skip SP: popped into BX then overwritten), BX, DX, CX, AX | |
 | `PUSHAD` / `POPAD` | none | 32-bit versions | |
@@ -129,7 +129,7 @@ up if DF = 0, down if DF = 1.
 
 Prefixes: `REP` only with MOVS/LODS/STOS (else `Only the REP prefix is allowed here`);
 `REPE REPZ REPNE REPNZ` only with CMPS/SCAS (else `Only the REPE/REPZ/REPNE/REPNZ
-prefixes are allowes here`). With a prefix: if ECX == 0 nothing happens; else repeat
+prefixes are allowed here`). With a prefix: if ECX == 0 nothing happens; else repeat
 { element; ECX -= 1 } while ECX != 0 and (prefix is REP, or ZF == 1 for REPE/REPZ, ZF
 == 0 for REPNE/REPNZ).
 

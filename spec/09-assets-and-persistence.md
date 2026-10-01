@@ -26,6 +26,10 @@ offline once loaded.
   load). Pages are rendered in a sandboxed container (no scripts; the pages have none).
 - Coverage gaps (mnemonics without a page, pages without a mnemonic) are listed in
   05 §14. The port shows the original's "no help" text for those (02 §11).
+- Help text fixes: in `LOOP.htm`, `LOOPE.htm`, `LOOPZ.htm`, `LOOPNE.htm` and
+  `LOOPNZ.htm`, replace the register name `CX` with `ECX` (whole word, including the
+  example `MOV CX,N`), because the loops always use ECX (07 Q-I-14). All other pages
+  ship unchanged.
 - Only English is supported (README open question). The `language` setting is kept so
   more languages can be dropped in as `assets/help/<lang>/` later.
 
@@ -127,18 +131,29 @@ UTF-8 JSON, extension `.mem` (Save appends it like `.asm`):
   "labelCells": [
     { "kind": "memory", "address": 100, "size": 4, "label": "LOOP" },
     { "kind": "register", "register": "EAX", "label": "DONE" }
-  ]
+  ],
+  "fpu": {
+    "top": 0,
+    "registers": ["0x0000000000000000", "...8 entries, R0..R7"],
+    "tags": [3, 3, 3, 3, 3, 3, 3, 3],
+    "status": { "C0": false, "C1": false, "C2": false, "C3": false,
+                "IE": false, "DE": false, "ZE": false, "OE": false,
+                "UE": false, "PE": false, "SF": false }
+  }
 }
 ```
 
 - Register values are unsigned 32-bit integers; constants are signed integers within
   the 64-bit range (written as JSON numbers when safe, else as decimal strings).
 - `labelCells` holds the label-valued markers (04 §4).
-- The FPU is not included (07 Q-SN-2), nor change stamps (bold state).
+- `fpu` holds the FPU state (04 §7, 07 Q-SN-2): physical registers `R0..R7` as the
+  16-digit hex of their IEEE-754 float64 bit pattern (exact, and NaN/Infinity survive),
+  their tags (0 valid, 1 zero, 2 special, 3 empty), `TOP`, and the status flags.
+  Change stamps (bold state) are not stored.
 - **Load Memory** validates `format`, `version`, sizes and base64 length; on failure it
   shows `Not a Jasmin memory file.` and changes nothing. On success it replaces the
   document's memory size, offset, memory, registers, flags, variables, constants,
-  `nextFree` and markers, clears the bold state, and refreshes all panels (devices
+  `nextFree`, markers and FPU, clears the bold state, and refreshes all panels (devices
   included). The editor text is untouched.
 - In-document snapshots (04 §9.10) use the same structure, held in memory.
 

@@ -125,11 +125,11 @@ destination.`
 - Registers have their natural size; a size qualifier fixes a memory operand's or
   immediate's size; otherwise memory operands and immediates are "undecided".
 - **Operation size** = max(size of operand 0, size of operand 1). If both undecided:
-  the instruction's default size: 4 for most instructions; 2 for `PUSH`, `POP`, `BT*`;
+  the instruction's default size: 4 for most instructions (including `PUSH` and `POP`, 07 Q-I-13); 2 for `BT*`;
   8 for FPU instructions and `CMPXCHG8B`; 1/2/4/8 for `DB`/`DW`/`DD`/`DQ` and
   `RESB`/`RESW`/`RESD`/`RESQ`.
 - Undecided memory operands take the operation size. Hence `mov [eax], 5` writes a
-  **dword**, `mov [eax], al` a byte, `push 5` pushes a **word**.
+  **dword**, `mov [eax], al` a byte, `push 5` pushes a **dword** (`push word 5` pushes a word).
 - Immediate values are converted at the operation size: instructions marked *signed*
   (05) keep the sign-extended value, others mask it to the operation size.
 - Variables evaluate to their **address**, constants to their value, labels to their
@@ -242,7 +242,7 @@ from the token's position. Messages verbatim:
 | `Operand must be at least N byte(s) large` | `push al` |
 | `Operand must not be larger than N byte(s)` | `db 300` |
 | `Only the REP prefix is allowed here` | `repe movsb` |
-| `Only the REPE/REPZ/REPNE/REPNZ prefixes are allowes here` (sic) | `rep cmpsb` |
+| `Only the REPE/REPZ/REPNE/REPNZ prefixes are allowed here` | `rep cmpsb` |
 | `One of the arguments must be ST0` | `fadd st1, st2` |
 | `second argument must be CL or an 8-bit immediate` | `shl eax, bl` |
 | `second register must be CL or an 8-bit immediate` | `rol eax, bl` |

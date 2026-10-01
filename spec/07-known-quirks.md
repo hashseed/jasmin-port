@@ -19,13 +19,13 @@ These are defaults; the owner can flip any of them.
 | Q-P-3 | `MOV`/`CMOVcc` ignore a third operand (`mov eax, [ebx], ecx` is accepted). *Verified.* | **FIX**: `Operand must be empty. ` on the third operand. |
 | Q-P-4 | Whitespace removal inside brackets is greedy from the first `[` to the last `]`; any line with two bracketed operands (`mov [eax], [ebx]`, `movs byte [edi], [esi]`) becomes one token and the parser throws a NullPointerException (the editor line simply stays unparsed). A stray `]]` does the same. *Verified.* | **FIX**: process each bracket pair separately; then two memory operands give `Only one memory access allowed.`, except bare `MOVS`/`CMPS` which accept them; malformed brackets give `Malformed memory address`. |
 | Q-P-5 | `EIP` is not an operand (`mov eax, eip` is `Invalid Expression`). | **KEEP**. |
-| Q-P-6 | Message typos: `...prefixes are allowes here`; Configuration page `Start adress`. | **KEEP** verbatim (tests compare messages). |
+| Q-P-6 | Message typos: `...prefixes are allowes here`; Configuration page `Start adress of the useable memory:`. | **FIX** (owner decision): `Only the REPE/REPZ/REPNE/REPNZ prefixes are allowed here`; `Start address of the usable memory:`. |
 
 ## Flags
 
 | ID | Original behavior | Disposition |
 |---|---|---|
-| Q-F-1 | `AF` uses `bit4(result) != bit4(a) xor bit4(b)` with `b` already negated for subtraction; wrong in some cases (source comment cites `MOV AL,80h; SUB AL,18h`). | **KEEP** (rarely observed; keeps conformance exact). |
+| Q-F-1 | `AF` uses `bit4(result) != bit4(a) xor bit4(b)` with `b` already negated for subtraction (the source comment admits it fails for `MOV AL,80h; SUB AL,18h`). The formula is right for additions but wrong for every subtraction whose subtrahend has a non-zero low nibble, and always wrong for `DEC`: `mov al, 0x10 / dec al` gives AF=0. *Verified.* | **FIX** (owner decision): `AF = bit4(a xor b xor result)` with the original operands, i.e. the carry/borrow out of bit 3 as on x86 (04 §3.1). Affects `SUB SBB CMP DEC NEG CMPS SCAS CMPXCHG`; `ADD ADC INC XADD` are unchanged. Verified by running the original with this formula patched in: only AF changes (08 §3). |
 
 ## Instructions
 
@@ -43,10 +43,10 @@ These are defaults; the owner can flip any of them.
 | Q-I-10 | `AAM`/`AAD` call `setFlags(PF & SF & ZF)` (bitwise AND = 0), so no flags change. | **FIX**: set SF, ZF, PF from AL. |
 | Q-I-11 | `SETcc` validates operand 1 instead of 0, so every `SETcc` fails with `Operand must be an 8bit register, or an 8bit memory location. ` Only 22 of the 30 forms are registered (`SETE`, `SETB`, `SETC`, `SETAE`, `SETBE`, `SETNA`, `SETNAE`, `SETNB` are `Unknown command`). *Verified.* | **FIX**: all 30 `SETcc` forms (same cc list as `CMOVcc`), operand `r8/m8`. |
 | Q-I-12 | `INT` is commented out (`Unknown command`) although `INT.htm` describes a DOS `INT 21h/AH=0Ah` line input. | **KEEP** (unknown command). Optional later feature. |
-| Q-I-13 | `PUSH imm` without a qualifier pushes 2 bytes. | **KEEP**. |
-| Q-I-14 | `LOOP*` always decrement ECX (help page says CX). | **KEEP**. |
+| Q-I-13 | `PUSH`/`POP` default to 2 bytes: `push 5` and `push [x]` push a word, `pop [x]` pops a word, and `push 100000` silently pushes only the low word (`0x86A0`). *Verified.* | **FIX** (owner decision): x86 32-bit behavior, default operand size 4 for `PUSH` and `POP` (immediates and memory without a size qualifier). `push word 5` and 16-bit registers still push 2 bytes; `push byte 5` stays an error. |
+| Q-I-14 | `LOOP*` always decrement ECX, but the help pages say CX. | **KEEP** the ECX behavior; **FIX** the help pages `LOOP`, `LOOPE`, `LOOPZ`, `LOOPNE`, `LOOPNZ` to say ECX (09 §1.1). |
 | Q-I-15 | `POPF`/`POPFD` on an "empty" stack do nothing, without an error. | **KEEP**. |
-| Q-I-16 | `CMOVcc` accepts immediates and 8-bit operands. | **KEEP**. |
+| Q-I-16 | `CMOVcc` accepts everything `MOV` accepts, including immediates and 8-bit operands (`cmove al, 5`). On real x86, `CMOVcc` takes a 16- or 32-bit register destination and a same-size register or memory source; immediates and 8-bit operands are invalid. | **Pending owner decision.** If FIX: destination `r16/r32`, source `r16/r32/m16/m32` of the same size, with the existing messages for wrong operand types. |
 
 ## Stack and errors
 
@@ -62,7 +62,7 @@ These are defaults; the owner can flip any of them.
 |---|---|---|
 | Q-FPU-1 | Reading `ST(i)` indexes `R[TOP + (i mod 8)]` without wrap-around: ArrayIndexOutOfBounds when `TOP + i >= 8` (e.g. one value pushed, then `fadd st0, st1`). *Verified.* | **FIX**: `R[(TOP + i) mod 8]`. |
 | Q-SN-1 | Take/Load Snapshot and Save/Load Memory fail silently: the register file class is not `Serializable`, so writing throws `NotSerializableException`, which is swallowed. *Verified.* | **FIX**: implement as specified in 04 §9.10 and 09 §4. |
-| Q-SN-2 | Snapshots and memory files exclude the FPU. | **KEEP**. |
+| Q-SN-2 | Snapshots and memory files exclude the FPU. | **FIX** (owner decision): include `R0..R7`, tags, `TOP` and the FPU status flags (04 §9.10, 09 §4.3). |
 
 ## UI
 

@@ -57,7 +57,9 @@ against the programs in [`conformance/`](conformance/) (see
 
 These do not block implementation; the spec picks the default shown.
 
-- **Fix vs. keep for bugs** (default: fix the ones marked `FIX`, see 07).
+- **Fix vs. keep for bugs** (default: fix the ones marked `FIX`, see 07). The owner
+  has decided Q-P-6, Q-F-1, Q-I-13, Q-I-14 and Q-SN-2 (all fixed); Q-I-16 (`CMOVcc`
+  operand checks) is still open.
 - **`.mem` snapshot format**: the Java format is a zipped Java object stream that a
   browser cannot read sensibly. Default: a new JSON format, no import of old `.mem`
   files.

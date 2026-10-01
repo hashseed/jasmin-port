@@ -54,9 +54,14 @@ precision (for `SUB`/`CMP`/`SBB`/`NEG` the code sets `b := -b` and adds). With
 - `PF = popcount(result & 0xFF) is even`
 - `CF = bit n of result` (carry out / borrow, given unsigned `a`, `b`)
 - `OF = sign(a) == sign(b) && sign(result) != sign(a)`, signs taken at bit `n-1`
-- `AF = bit4(result) != (bit4(a) xor bit4(b))`
+- `AF = bit4(a xor b xor result)`, where `b` is the **original** second operand (the
+  subtrahend for `SUB`/`SBB`/`CMP`/`CMPS`/`SCAS`/`CMPXCHG`, `1` for `INC`/`DEC`, and for
+  `NEG` `a = 0`, `b = dest`). This is the carry or borrow out of bit 3, as on x86.
+  Examples: `mov al, 0x10 / dec al` gives AF=1; `mov al, 0x80 / sub al, 0x18` gives
+  AF=1; `cmp ecx, ecx` gives AF=0. The original used the negated `b` and got AF wrong
+  for most subtractions (07 Q-F-1, FIX).
 
-Conformance tests pin the exact results; see 07 Q-F-1 for a known `AF` inaccuracy.
+Conformance tests pin the exact results (08 §3 lists where the port differs).
 
 ## 4. Memory
 
@@ -104,7 +109,8 @@ count: equ 5             ; constant, evaluated at parse time
 
 ## 6. Stack
 
-- `push x` (2 or 4 bytes): `ESP -= size`, then write `x` at `[ESP]`.
+- `push x` (2 or 4 bytes; 4 unless `x` is a 16-bit register or has a `word`
+  qualifier, 07 Q-I-13): `ESP -= size`, then write `x` at `[ESP]`.
 - `pop x`: read `size` bytes at `[ESP]` into `x`, then if `ESP + size > EBP` raise the
   stack runtime error (the destination has already been written and ESP is unchanged);
   otherwise `ESP += size`. The comparison uses **EBP**, not the top of memory, so after
@@ -134,7 +140,8 @@ count: equ 5             ; constant, evaluated at parse time
 - Memory formats: `M32` float32, `M64` float64 for real loads/stores; `M16`/`M32`/`M64`
   signed integers for `FILD`/`FIST(P)`/`FIxxx`. Integer stores truncate toward zero
   (Java `(long) d`).
-- Reset clears all FPU state; snapshots do **not** include the FPU (07 Q-SN-2).
+- Reset clears all FPU state. Snapshots and `.mem` files include the full FPU state
+  (registers, tags, TOP, status flags), 07 Q-SN-2.
 
 ## 8. "Recently changed" tracking
 
@@ -233,10 +240,12 @@ scrolls to the execution mark.
 
 ### 9.10 Snapshots
 - **Take Snapshot:** store a copy of the machine (memory, label markers, registers
-  including EIP, flags, variables, constants, `nextFree`) in the document. One slot per
+  including EIP, flags, variables, constants, `nextFree`, and the FPU: `R0..R7`, tags,
+  `TOP`, status flags) in the document. One slot per
   document; taking another replaces it.
 - **Load Snapshot:** restore that copy and refresh. Enabled once a snapshot exists.
-- The FPU is not part of a snapshot; change stamps are not restored.
+- Change stamps (bold state) are not restored. (The original excluded the FPU; the
+  port includes it, 07 Q-SN-2.)
 - In the last upstream version both actions fail silently because the register file is
   not serializable (07 Q-SN-1). The port implements the intended behavior above.
 - **Save Memory / Load Memory** write/read the same state to/from a file (09 §4).

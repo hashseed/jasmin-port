@@ -1,4 +1,4 @@
-push 0x1234
+push word 0x1234
 push eax
 mov eax, 0xDEADBEEF
 push eax
