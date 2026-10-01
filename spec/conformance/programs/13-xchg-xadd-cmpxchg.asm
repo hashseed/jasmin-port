@@ -1,0 +1,10 @@
+mov eax, 1
+mov ebx, 2
+xchg eax, ebx
+mov ecx, 5
+mov edx, 6
+xadd ecx, edx
+mov eax, 6
+mov esi, 6
+mov edi, 9
+cmpxchg esi, edi

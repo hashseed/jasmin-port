@@ -1,0 +1,9 @@
+mov eax, 5
+cmp eax, 3
+mov ebx, 1
+mov ecx, 2
+cmovg ebx, ecx
+cmovl ecx, eax
+mov edx, 0
+cmp edx, 1
+cmovb edx, eax

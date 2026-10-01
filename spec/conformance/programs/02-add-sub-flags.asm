@@ -1,0 +1,9 @@
+mov al, 0x7F
+add al, 1
+mov bl, al
+mov al, 0xFF
+add al, 1
+mov ah, 5
+sub ah, 7
+mov cx, 0xF0F0
+sub cx, 0xF0F1

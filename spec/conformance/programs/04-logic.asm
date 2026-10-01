@@ -1,0 +1,9 @@
+mov eax, 0xF0F0F0F0
+and eax, 0x0FF00FF0
+mov ebx, 0x00FF
+or ebx, 0xFF00
+mov ecx, 0xAAAA
+xor ecx, 0xFFFF
+mov edx, 0x80
+test dl, 0x80
+not ebx

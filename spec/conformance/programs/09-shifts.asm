@@ -1,0 +1,11 @@
+mov eax, 1
+shl eax, 31
+mov ebx, 0x80000000
+sar ebx, 4
+mov ecx, 0x80000000
+shr ecx, 4
+mov dl, 0x81
+sal dl, 1
+mov cl, 3
+mov esi, 0xF
+shl esi, cl
