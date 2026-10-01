@@ -46,6 +46,11 @@ Common rules:
   of digits: (1-8)`), `Change color` (choice `blue` / `jasmin`, prompt `Choose the
   color:`).
 - Example: `mov byte [0], 0x3F` shows `0` on the rightmost digit (segments a-f).
+- Example from the emcelettronica tutorial (03 rules: undecided memory is a dword, so
+  each write also clears the three bytes after it):
+  `mov ebx,0 / mov [ebx],7 / mov ebx,1 / mov [ebx],6 / mov ebx,2 / mov [ebx],63 /
+  mov ebx,3 / mov [ebx],91` leaves bytes `07 06 3F 5B` and the 4-digit display reads
+  `2017`.
 
 ## 2. StripLight (`StripLight` tab)
 
