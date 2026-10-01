@@ -43,6 +43,10 @@ test.describe('context help (spec 02 §11)', () => {
 
 test.describe('help tabs (spec 02 §12)', () => {
   test('Welcome links: New File creates a document, Open File opens one', async ({ page }) => {
+    // Use the <input type=file> fallback so Playwright sees a file chooser.
+    await page.addInitScript(() => {
+      delete (window as unknown as Record<string, unknown>)['showOpenFilePicker'];
+    });
     await page.goto('/');
     await expect(page.getByRole('img', { name: 'Jasmin' })).toBeVisible();
     await helpLinks(page).getByRole('link', { name: 'New File' }).click();
