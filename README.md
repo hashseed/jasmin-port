@@ -8,7 +8,7 @@ server, no install, just a static web page.
 ## The original
 
 Jasmin (Java Assembler Interpreter) was developed by second-term students for the
-[Chair of Computer Architecture (LRR)](https://www.ce.cit.tum.de/caps/) at TUM as a
+[Chair of Computer Architecture (LRR)](http://www.lrr.in.tum.de) at TUM as a
 learning tool for x86 assembler. It lets students write assembly code, step through
 it line by line, and watch registers, flags, memory, the stack and simple I/O devices
 change.
