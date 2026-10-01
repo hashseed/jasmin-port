@@ -1,4 +1,5 @@
 import { Page, expect, test } from '@playwright/test';
+import { version } from '../package.json';
 
 const helpPane = (page: Page) => page.getByRole('tabpanel', { name: 'Help', exact: true });
 const toolbarButton = (page: Page, action: 'back' | 'forward') =>
@@ -71,7 +72,7 @@ test.describe('help tabs (spec 02 §12)', () => {
     await page.goto('/');
     const welcome = page.locator('app-help-view');
     await expect(welcome).toContainText('Version 1.5.11 (2016-10-28)');
-    await expect(welcome).toContainText('Web port: version');
+    await expect(welcome).toContainText(`Web port: version ${version},`);
     await expect(welcome).toContainText('Lehrstuhl für Rechnertechnik und Rechnerorganisation');
     await helpLinks(page).getByRole('link', { name: 'Credits' }).click();
     await expect(welcome.locator('[data-anchor="credits"]')).toBeInViewport();

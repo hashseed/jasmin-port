@@ -1,12 +1,16 @@
 import { CdkContextMenuTrigger, CdkMenu, CdkMenuItem } from '@angular/cdk/menu';
-import { ChangeDetectionStrategy, Component, inject } from '@angular/core';
+import { ChangeDetectionStrategy, Component, ElementRef, inject } from '@angular/core';
 import { LucideX } from '@lucide/angular';
 import { ActionsService } from '../../services/actions.service';
 import { Tab, WorkspaceService } from '../../services/workspace.service';
+import { rovingIndex } from '../common/roving-focus';
 
 /**
  * Document and help tabs (spec 02 §1). Right-click opens a menu with Close Tab,
  * which closes the selected tab; each tab also has a close button on hover.
+ * Keyboard: the selected tab is the strip's one tab stop; Left/Right/Home/End
+ * select another tab (selection follows focus), Delete closes the focused tab
+ * (the keyboard form of the hover close button).
  */
 @Component({
   selector: 'app-tab-strip',
@@ -26,6 +30,7 @@ import { Tab, WorkspaceService } from '../../services/workspace.service';
             [attr.aria-controls]="'panel-' + tab.id"
             [tabindex]="selected ? 0 : -1"
             (click)="workspace.select(tab.id)"
+            (keydown)="onKey($event)"
           >
             {{ titleOf(tab) }}
             @if (tab.kind === 'document' && tab.doc.modified()) {
@@ -142,6 +147,33 @@ import { Tab, WorkspaceService } from '../../services/workspace.service';
 export class TabStrip {
   protected readonly workspace = inject(WorkspaceService);
   protected readonly closeTab = inject(ActionsService).actions.closeTab;
+
+  private readonly host = inject<ElementRef<HTMLElement>>(ElementRef);
+
+  protected onKey(event: KeyboardEvent): void {
+    const tabs = this.workspace.tabs();
+    const current = tabs.findIndex((t) => t.id === this.workspace.selected()?.id);
+    if (event.key === 'Delete' && current >= 0) {
+      event.preventDefault();
+      this.workspace.close(tabs[current].id);
+      this.focusSelected();
+      return;
+    }
+    const next = rovingIndex(event, current, tabs.length, 'horizontal');
+    if (next === null) return;
+    event.preventDefault();
+    this.workspace.select(tabs[next].id);
+    this.focusSelected();
+  }
+
+  /** Moves focus to the selected tab after the view has updated. */
+  private focusSelected(): void {
+    queueMicrotask(() => {
+      const id = this.workspace.selected()?.id;
+      if (id === undefined) return;
+      this.host.nativeElement.querySelector<HTMLElement>(`[id="tab-${id}"]`)?.focus();
+    });
+  }
 
   protected titleOf(tab: Tab): string {
     return tab.kind === 'document' ? tab.doc.title() : tab.help.title;

@@ -39,6 +39,8 @@ import {
 /** Context menu of spec 02 §6.1. */
 const CONTEXT_MENU: MenuEntries = ['undo', 'redo', null, 'cut', 'copy', 'paste'];
 
+let nextEditorId = 1;
+
 /** Undo history depth of spec 02 §6.1. */
 const HISTORY_DEPTH = 99_999;
 
@@ -124,6 +126,10 @@ const editorTheme = EditorView.theme({
       [style.font-size.px]="fontSize()"
     ></div>
     <div class="error-line" role="status" aria-label="Error">{{ message() }}</div>
+    <p class="visually-hidden" [id]="hintId">
+      Tab inserts a tab. Press Escape, then Tab, to leave the editor. F8 toggles a breakpoint on the
+      caret line.
+    </p>
     <ng-template #menu><app-menu-panel label="Editor" [entries]="contextMenu" /></ng-template>
   `,
   styles: `
@@ -161,6 +167,8 @@ export class CodeEditor implements EditorHandle {
   protected readonly fontSize = this.settings.watch('font.size');
   /** The error line (spec 02 §6.4). */
   protected readonly message = signal('');
+  /** Screen-reader hint on leaving the editor (Tab is taken) and the breakpoint key. */
+  protected readonly hintId = `editor-hint-${nextEditorId++}`;
 
   private view: EditorView | null = null;
   private readonly editable = new Compartment();
@@ -209,12 +217,21 @@ export class CodeEditor implements EditorHandle {
           keymap.of([
             { key: 'Enter', run: insertNewlineKeepIndent },
             { key: 'Tab', run: insertTabCharacter },
+            // Port addition: the keyboard form of clicking the gutter.
+            {
+              key: 'F8',
+              run: (v) => {
+                host.toggleBreakpoint(v.state.doc.lineAt(v.state.selection.main.head).number - 1);
+                return true;
+              },
+            },
             ...defaultKeymap,
             ...historyKeymap,
           ]),
           this.editable.of(editableState(doc.session.running)),
           EditorView.contentAttributes.of({
             'aria-label': 'Program code',
+            'aria-describedby': this.hintId,
             spellcheck: 'false',
             autocapitalize: 'off',
             autocorrect: 'off',

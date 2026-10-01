@@ -1,6 +1,14 @@
-import { ChangeDetectionStrategy, Component, inject } from '@angular/core';
+import {
+  ChangeDetectionStrategy,
+  Component,
+  ElementRef,
+  computed,
+  inject,
+  signal,
+} from '@angular/core';
 import { LucideDynamicIcon } from '@lucide/angular';
 import { ActionId, ActionsService, AppAction } from '../../services/actions.service';
+import { rovingIndex } from '../common/roving-focus';
 import { ACTION_ICONS, PAUSE_ICON } from './action-icons';
 
 /** Toolbar buttons in the original order and groups (spec 02 §3). */
@@ -22,7 +30,7 @@ export function tooltipOf(action: AppAction): string {
   selector: 'app-toolbar',
   changeDetection: ChangeDetectionStrategy.OnPush,
   imports: [LucideDynamicIcon],
-  host: { role: 'toolbar', 'aria-label': 'Toolbar' },
+  host: { role: 'toolbar', 'aria-label': 'Toolbar', '(keydown)': 'onKey($event)' },
   template: `
     @for (group of groups; track $index) {
       @if (!$first) {
@@ -40,6 +48,8 @@ export function tooltipOf(action: AppAction): string {
           [attr.aria-keyshortcuts]="action.shortcut ?? null"
           [title]="tooltip(action)"
           [disabled]="!action.enabled()"
+          [tabindex]="action.id === tabStop() ? 0 : -1"
+          (focus)="focused.set(action.id)"
           (click)="action.run()"
         >
           <svg [lucideIcon]="iconOf(action.id)" [size]="18" [strokeWidth]="1.75"></svg>
@@ -97,6 +107,34 @@ export class Toolbar {
   protected readonly isRunning = this.service.isRunning;
   protected readonly groups = GROUPS.map((ids) => ids.map((id) => this.service.actions[id]));
   protected readonly tooltip = tooltipOf;
+  private readonly host = inject<ElementRef<HTMLElement>>(ElementRef);
+
+  /**
+   * Roving tab stop (WAI-ARIA toolbar pattern): Tab enters the toolbar once, on the
+   * last focused button if it is still enabled, else on the first enabled one;
+   * Left/Right/Home/End move between the enabled buttons.
+   */
+  protected readonly focused = signal<ActionId | null>(null);
+  private readonly enabledIds = computed(() =>
+    this.groups
+      .flat()
+      .filter((a) => a.enabled())
+      .map((a) => a.id),
+  );
+  protected readonly tabStop = computed(() => {
+    const enabled = this.enabledIds();
+    const focused = this.focused();
+    return focused !== null && enabled.includes(focused) ? focused : (enabled[0] ?? null);
+  });
+
+  protected onKey(event: KeyboardEvent): void {
+    const enabled = this.enabledIds();
+    const current = enabled.indexOf(this.focused() ?? enabled[0]);
+    const next = rovingIndex(event, current, enabled.length, 'horizontal');
+    if (next === null) return;
+    event.preventDefault();
+    this.host.nativeElement.querySelector<HTMLElement>(`[data-action="${enabled[next]}"]`)?.focus();
+  }
 
   protected iconOf(id: ActionId) {
     if (id === 'runPause' && this.isRunning()) return PAUSE_ICON;

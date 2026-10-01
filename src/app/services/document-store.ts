@@ -5,8 +5,7 @@ import type { FileHandle } from './file-access';
 
 /**
  * What the shell needs from a document's editor: the Edit menu commands. The
- * editor component registers itself on its store; M5's CodeMirror editor
- * implements the same interface.
+ * CodeMirror editor component registers itself on its store.
  */
 export interface EditorHandle {
   undo(): void;
@@ -49,14 +48,11 @@ export class DocumentStore {
   memoryHandle: FileHandle | null = null;
 
   private readonly runningState = signal(false);
-  private readonly errorState = signal<string | null>(null);
   private readonly snapshotState = signal(false);
   private readonly versionState = signal(0);
 
   /** True while Run is in progress (spec 02 §4 "running"). */
   readonly running: Signal<boolean> = this.runningState.asReadonly();
-  /** The error line text (spec 02 §6.4), or null. */
-  readonly error: Signal<string | null> = this.errorState.asReadonly();
   /** Whether Load Snapshot has something to restore. */
   readonly hasSnapshot: Signal<boolean> = this.snapshotState.asReadonly();
   /** Bumps whenever panels must refresh (spec 04 §9.6). */
@@ -187,7 +183,6 @@ export class DocumentStore {
 
   private sync(): void {
     this.runningState.set(this.session.running);
-    this.errorState.set(this.session.error);
     this.snapshotState.set(this.session.snapshot !== null);
   }
 }

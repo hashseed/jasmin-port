@@ -1,10 +1,18 @@
-import { ChangeDetectionStrategy, Component, input, signal } from '@angular/core';
+import {
+  ChangeDetectionStrategy,
+  Component,
+  ElementRef,
+  inject,
+  input,
+  signal,
+} from '@angular/core';
 import { DocumentStore } from '../../services/document-store';
 import { ConsoleView } from '../devices/console-view';
 import { GraphicsView } from '../devices/graphics-view';
 import { SevenSegmentView } from '../devices/seven-segment-view';
 import { StripLightView } from '../devices/strip-light-view';
 import { ContextHelp } from '../help/context-help';
+import { rovingIndex } from '../common/roving-focus';
 
 /** Bottom tabs of the center column, in the original order (spec 02 §5). */
 export const BOTTOM_TABS = ['Help', '7-Segment', 'StripLight', 'Console', 'Graphics'] as const;
@@ -40,8 +48,10 @@ const DEVICE_TABS: ReadonlySet<BottomTab> = new Set([
           [id]="idPrefix() + '-tab-' + $index"
           [attr.aria-selected]="tab === selected()"
           [attr.aria-controls]="idPrefix() + '-panel'"
+          [tabindex]="tab === selected() ? 0 : -1"
           [class.selected]="tab === selected()"
           (click)="selected.set(tab)"
+          (keydown)="onKey($event)"
         >
           {{ tab }}
         </button>
@@ -50,8 +60,9 @@ const DEVICE_TABS: ReadonlySet<BottomTab> = new Set([
     <div
       class="content"
       role="tabpanel"
+      tabindex="0"
       [id]="idPrefix() + '-panel'"
-      [attr.aria-label]="selected()"
+      [attr.aria-labelledby]="idPrefix() + '-tab-' + tabs.indexOf(selected())"
       [class.device]="deviceTabs.has(selected())"
     >
       @switch (selected()) {
@@ -138,4 +149,21 @@ export class BottomPane {
   protected readonly deviceTabs = DEVICE_TABS;
   protected readonly tabs = BOTTOM_TABS;
   protected readonly selected = signal<BottomTab>('Help');
+  private readonly host = inject<ElementRef<HTMLElement>>(ElementRef);
+
+  /** Up/Down/Home/End move between the tabs; selection follows focus. */
+  protected onKey(event: KeyboardEvent): void {
+    const next = rovingIndex(
+      event,
+      this.tabs.indexOf(this.selected()),
+      this.tabs.length,
+      'vertical',
+    );
+    if (next === null) return;
+    event.preventDefault();
+    this.selected.set(this.tabs[next]);
+    this.host.nativeElement
+      .querySelector<HTMLElement>(`[id="${this.idPrefix()}-tab-${next}"]`)
+      ?.focus();
+  }
 }

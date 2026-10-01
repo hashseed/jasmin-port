@@ -1,6 +1,6 @@
 import { Injectable, inject } from '@angular/core';
 import { NOT_A_MEMORY_FILE } from '../core';
-import { DialogService } from '../ui/dialogs/message-dialog';
+import { DialogService } from '../ui/dialogs/dialogs';
 import { DocumentStore } from './document-store';
 import { FILE_ACCESS, FileHandle, withExtension } from './file-access';
 import { SettingsService } from './settings.service';

@@ -126,7 +126,7 @@ test.describe('I/O devices (spec 06)', () => {
     await expect(prompt.getByRole('textbox')).toHaveValue('4');
     await prompt.getByRole('textbox').fill('9');
     await prompt.getByRole('button', { name: 'OK' }).click();
-    const message = page.getByRole('dialog', { name: 'The entered value was not valid!' });
+    const message = page.getByRole('alertdialog', { name: 'The entered value was not valid!' });
     await message.getByRole('button', { name: 'OK' }).click();
     await expect(message).toBeHidden();
     await expect(canvas).toHaveAttribute('data-state', '- - - -');

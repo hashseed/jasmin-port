@@ -19,6 +19,7 @@ import { Toolbar } from './ui/shell/toolbar';
   imports: [MenuBar, Toolbar, TabStrip, DocumentView, HelpView],
   template: `
     <header class="chrome">
+      <h1 class="visually-hidden">Jasmin</h1>
       <app-menu-bar />
       <app-toolbar />
       <app-tab-strip />
