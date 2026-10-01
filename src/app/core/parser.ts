@@ -359,8 +359,17 @@ export class Parser {
    * Parses and executes one line (uncached `Parser.execute`). Returns a parse or
    * runtime error, or null.
    */
+  /**
+   * Parses and executes one line (`Parser.execute` with `lineNumber == -1`). A line
+   * that runs an instruction advances the change counter (spec 04 §8) unless the
+   * instruction failed with an exception-type error.
+   */
   execute(line: string, lastLabel: string | null): ParseError | null {
-    const parsed = this.parse(line, lastLabel);
+    return this.executeParsed(this.parse(line, lastLabel), true);
+  }
+
+  /** Validates the operands of a parsed line against the current state and executes it. */
+  executeParsed(parsed: ParseResult, advanceCounter: boolean): ParseError | null {
     if (parsed.error) return parsed.error;
     if (parsed.empty || parsed.labelOnly || !parsed.command || !parsed.param) return null;
     const param = parsed.param;
@@ -369,16 +378,20 @@ export class Parser {
       if (message !== null)
         return ParseError.forArgument(parsed.originalLine, param.argument(i), message);
     }
-    return this.run(parsed.command, param);
+    return this.run(parsed.command, param, advanceCounter);
   }
 
-  /** Executes an already parsed instruction (the cached path used by Run). */
-  run(command: Command, param: Parameters): ParseError | null {
+  /**
+   * Executes an already parsed instruction. Run uses this for its cached lines and
+   * advances the change counter once at the end instead (`advanceCounter = false`).
+   */
+  run(command: Command, param: Parameters, advanceCounter = false): ParseError | null {
     const error = command.execute(param);
     if (error) {
       this.dsp.clearAddressOutOfRange();
       return error;
     }
+    if (advanceCounter) this.dsp.updateDirty();
     if (this.dsp.addressOutOfRange()) {
       this.dsp.clearAddressOutOfRange();
       return ParseError.runtime(RUNTIME_STACK_ERROR);

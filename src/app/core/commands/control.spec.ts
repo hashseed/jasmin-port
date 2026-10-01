@@ -304,10 +304,18 @@ describe('STD / CLD / STC / CLC / CMC', () => {
 });
 
 describe('JASMINSLEEP', () => {
-  it('records the requested milliseconds in pendingSleepMs', () => {
-    expect(run('jasminsleep 250').dsp.pendingSleepMs).toBe(250);
-    expect(run('mov eax, 40\njasminsleep eax').dsp.pendingSleepMs).toBe(40);
-    expect(run('d: equ 15\njasminsleep d').dsp.pendingSleepMs).toBe(15);
+  it('asks Run to wait for the requested milliseconds', () => {
+    const sleepOf = (source: string) => {
+      const dsp = new DataSpace(4096, 0);
+      const program = new Program(dsp);
+      program.setText(source);
+      const interpreter = new Interpreter(dsp, program);
+      interpreter.beginRun(() => false);
+      return interpreter.runSteps(10, () => false);
+    };
+    expect(sleepOf('jasminsleep 250')).toEqual({ kind: 'sleep', ms: 250 });
+    expect(sleepOf('mov eax, 40\njasminsleep eax')).toEqual({ kind: 'sleep', ms: 40 });
+    expect(sleepOf('d: equ 15\njasminsleep d')).toEqual({ kind: 'sleep', ms: 15 });
   });
 
   it('rejects a missing or extra operand', () => {

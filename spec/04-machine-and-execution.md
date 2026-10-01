@@ -178,6 +178,9 @@ no-ops but still take a step.
 
 Stepping when `EIP >= lineCount` only increments EIP.
 
+*Port note:* `JASMINSLEEP` only delays Run. The original slept on the UI thread during
+Step and Execute current line, freezing the window; the port ignores the delay there.
+
 ### 9.3 Run (F5, toolbar play)
 1. Ignored if already running. Editor becomes read-only; buttons switch (02 §4).
 2. If the line at EIP has a breakpoint, that breakpoint is ignored once.
@@ -192,7 +195,8 @@ Within one run each line is parsed at most once (the first time it executes) and
 parsed form is reused; this is only an optimization, the editor cannot change during a
 run.
 
-*Port note:* run in time-sliced batches (01 §2) so the UI stays responsive; I/O devices
+*Port note:* Run clears the error line when it starts (the original left the previous
+message until the next Step). Run in time-sliced batches (01 §2) so the UI stays responsive; I/O devices
 repaint live during the run; other panels refresh when the run stops. An infinite loop
 must stay pausable.
 
