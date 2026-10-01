@@ -1,4 +1,6 @@
 import { ChangeDetectionStrategy, Component, input, signal } from '@angular/core';
+import { DocumentStore } from '../../services/document-store';
+import { ContextHelp } from '../help/context-help';
 
 /** Bottom tabs of the center column, in the original order (spec 02 §5). */
 export const BOTTOM_TABS = ['Help', '7-Segment', 'StripLight', 'Console', 'Graphics'] as const;
@@ -14,11 +16,12 @@ const MILESTONE: Record<BottomTab, string> = {
 
 /**
  * The bottom tab pane with its tabs on the left edge as stacked horizontal
- * labels. M4 shows placeholders: context help arrives in M6, devices in M7.
+ * labels. `Help` is the context help pane (spec 02 §11); the devices arrive in M7.
  */
 @Component({
   selector: 'app-bottom-pane',
   changeDetection: ChangeDetectionStrategy.OnPush,
+  imports: [ContextHelp],
   template: `
     <div class="side" role="tablist" aria-orientation="vertical" aria-label="Tools">
       @for (tab of tabs; track tab) {
@@ -41,9 +44,12 @@ const MILESTONE: Record<BottomTab, string> = {
       [id]="idPrefix() + '-panel'"
       [attr.aria-label]="selected()"
     >
-      <p class="placeholder">{{ selected() }} (placeholder · {{ milestone[selected()] }})</p>
       @if (selected() === 'Help') {
-        <p class="placeholder">No help available for current context.</p>
+        @defer (on immediate) {
+          <app-context-help [doc]="doc()" />
+        }
+      } @else {
+        <p class="placeholder">{{ selected() }} (placeholder · {{ milestone[selected()] }})</p>
       }
     </div>
   `,
@@ -97,6 +103,7 @@ const MILESTONE: Record<BottomTab, string> = {
 })
 export class BottomPane {
   readonly idPrefix = input.required<string>();
+  readonly doc = input.required<DocumentStore>();
   protected readonly tabs = BOTTOM_TABS;
   protected readonly milestone = MILESTONE;
   protected readonly selected = signal<BottomTab>('Help');

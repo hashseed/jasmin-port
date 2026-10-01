@@ -54,4 +54,28 @@ describe('WorkspaceService', () => {
     expect(doc.layout.split2()).toBe(280);
     expect(doc.layout.split1()).toBeNull();
   });
+
+  it('help tabs keep plain back/forward stacks of locations (07 Q-UI-4)', () => {
+    const help = workspace.openHelp('welcome');
+    help.navigate('welcome'); // same location: no history entry
+    expect(help.canBack()).toBe(false);
+    help.navigate('welcome', 'credits');
+    help.navigate('configuration');
+    expect(help.location()).toEqual({ page: 'configuration', anchor: null });
+    help.back();
+    expect(help.location()).toEqual({ page: 'welcome', anchor: 'credits' });
+    help.back();
+    expect(help.location()).toEqual({ page: 'welcome', anchor: null });
+    expect(help.canBack()).toBe(false);
+    help.forward();
+    help.forward();
+    expect(help.page()).toBe('configuration');
+    expect(help.canForward()).toBe(false);
+    help.back();
+    help.navigate('configuration', null);
+    help.back();
+    help.navigate('welcome'); // a new branch clears forward
+    expect(help.canForward()).toBe(false);
+    expect(help.title).toBe('Welcome');
+  });
 });

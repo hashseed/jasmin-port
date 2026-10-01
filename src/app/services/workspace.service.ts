@@ -1,4 +1,12 @@
-import { Injectable, InjectionToken, Signal, computed, inject, signal } from '@angular/core';
+import {
+  Injectable,
+  InjectionToken,
+  Signal,
+  WritableSignal,
+  computed,
+  inject,
+  signal,
+} from '@angular/core';
 import { MachineConfig, MachineSession } from '../core';
 import { DocumentStore } from './document-store';
 import { SettingsService } from './settings.service';
@@ -9,8 +17,14 @@ export const SESSION_FACTORY = new InjectionToken<(config: MachineConfig) => Mac
   { providedIn: 'root', factory: () => (config) => new MachineSession(config) },
 );
 
-/** Pages a help tab can show (spec 02 §12). Content arrives in M6. */
+/** Pages a help tab can show (spec 02 §12). */
 export type HelpPage = 'welcome' | 'configuration';
+
+/** A place in a help tab: a page and optionally an anchor on it (`Welcome.htm#credits`). */
+export interface HelpLocation {
+  readonly page: HelpPage;
+  readonly anchor: string | null;
+}
 
 const HELP_TITLES: Record<HelpPage, string> = {
   welcome: 'Welcome',
@@ -19,42 +33,50 @@ const HELP_TITLES: Record<HelpPage, string> = {
 
 let nextHelpId = 1;
 
-/** A help tab with its own back/forward history (07 Q-UI-4: plain stacks). */
+/**
+ * A help tab with its own back/forward history (07 Q-UI-4: plain stacks). Like
+ * the original's URL history, a location includes its anchor, so following the
+ * `Credits` link is a step Back can undo.
+ */
 export class HelpTab {
   readonly id = `help-${nextHelpId++}`;
-  readonly page = signal<HelpPage>('welcome');
-  private readonly backStack = signal<HelpPage[]>([]);
-  private readonly forwardStack = signal<HelpPage[]>([]);
+  private readonly current: WritableSignal<HelpLocation>;
+  private readonly backStack = signal<HelpLocation[]>([]);
+  private readonly forwardStack = signal<HelpLocation[]>([]);
   /** The tab keeps the title it was opened with. */
   readonly title: string;
+  readonly location: Signal<HelpLocation>;
+  readonly page = computed(() => this.location().page);
   readonly canBack = computed(() => this.backStack().length > 0);
   readonly canForward = computed(() => this.forwardStack().length > 0);
 
   constructor(page: HelpPage) {
-    this.page.set(page);
+    this.current = signal({ page, anchor: null });
+    this.location = this.current.asReadonly();
     this.title = HELP_TITLES[page];
   }
 
-  navigate(page: HelpPage): void {
-    if (page === this.page()) return;
-    this.backStack.update((s) => [...s, this.page()]);
+  navigate(page: HelpPage, anchor: string | null = null): void {
+    const here = this.current();
+    if (page === here.page && anchor === here.anchor) return;
+    this.backStack.update((s) => [...s, here]);
     this.forwardStack.set([]);
-    this.page.set(page);
+    this.current.set({ page, anchor });
   }
 
   back(): void {
     const stack = this.backStack();
     if (!stack.length) return;
-    this.forwardStack.update((s) => [...s, this.page()]);
-    this.page.set(stack[stack.length - 1]);
+    this.forwardStack.update((s) => [...s, this.current()]);
+    this.current.set(stack[stack.length - 1]);
     this.backStack.set(stack.slice(0, -1));
   }
 
   forward(): void {
     const stack = this.forwardStack();
     if (!stack.length) return;
-    this.backStack.update((s) => [...s, this.page()]);
-    this.page.set(stack[stack.length - 1]);
+    this.backStack.update((s) => [...s, this.current()]);
+    this.current.set(stack[stack.length - 1]);
     this.forwardStack.set(stack.slice(0, -1));
   }
 }

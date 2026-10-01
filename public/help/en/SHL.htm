@@ -1,0 +1,21 @@
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd">
+<html xmlns="http://www.w3.org/1999/xhtml" xml:lang="en" lang="en">
+<head>
+    <title>SHL.htm</title>
+</head>
+<body>
+<div style="font-family:Helvetica,Arial,sans-serif;font-size:11px;">
+    <strong>Command:</strong> SHL- Shift logical left<br>
+    <strong>Arguments:</strong> OP: register or memory location; QUANTITY: immediate<br>
+    <strong>Usage:</strong> SHL OP, QUANTITY<br>
+    <strong>Effects:</strong> Shifts all bits of OP left QUANTITY times; fills up with 0.<br>
+    <strong>Flags&nbsp;to&nbsp;be&nbsp;set:</strong> <i>OF</i>, SF, ZF, PF, CF
+    <br><strong>Misc:</strong>
+    Carry flag contains bit that was shifted out last.<br>
+    Overflow flag is only affected with 1-bit shifts and is set to 0 if the most-significant bit of the result is the same as the carry flag; otherwise it's set to 1.
+    If QUANTITY isn't 1, the overflow flag's state is undefined!<br>
+    Corresponds to multiply by 2 QUANTITY times.
+
+</div>
+</body>
+</html>
