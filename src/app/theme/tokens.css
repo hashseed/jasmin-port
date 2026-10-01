@@ -1,0 +1,124 @@
+/*
+ * Design tokens (docs/plan.md, "Visual direction"). Semantic colors keep the
+ * original's meaning and hue; exact values are ours. Dark values apply when the
+ * OS prefers dark, unless the app forces a theme with data-theme on <html>.
+ */
+:root {
+  color-scheme: light;
+
+  --font-ui: 'Inter Variable', system-ui, -apple-system, 'Segoe UI', sans-serif;
+  --font-mono: 'JetBrains Mono Variable', ui-monospace, 'SFMono-Regular', Menlo, monospace;
+  --font-size-ui: 13px;
+  --font-size-mono: 13px;
+
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --radius: 8px;
+  --radius-sm: 4px;
+  --toolbar-height: 40px;
+  --divider-hit: 3px;
+
+  --bg-app: #f4f5f7;
+  --bg-panel: #ffffff;
+  --bg-subtle: #f0f1f4;
+  --bg-hover: #e8eaef;
+  --bg-selected: #dde6fb;
+  --border: #dcdfe5;
+  --text: #1c1f24;
+  --text-muted: #5f6672;
+  --accent: #2f5bd3;
+  --focus-ring: #2f5bd3;
+
+  --run: #1f9d4c;
+  --pause: #d98a00;
+  --stop: #d92d20;
+
+  --syntax-mnemonic: #1d3fbf;
+  --syntax-register: #16803a;
+  --syntax-label: #c56a00;
+  --syntax-constant: #9b1fb8;
+  --syntax-variable: #0f7f86;
+  --syntax-comment: #7a7f87;
+  --syntax-error: #d92d20;
+
+  --exec-mark: rgb(52 199 89 / 35%);
+  --exec-mark-bar: #34c759;
+  --stack-row: #e3f4dc;
+
+  --reg-eax: #fbd3cc;
+  --reg-ebx: #f6f3cc;
+  --reg-ecx: #d3eed3;
+  --reg-edx: #d3d3ef;
+  --reg-esi: #f5e3c2;
+  --reg-edi: #ecd3ec;
+}
+
+:root[data-theme='dark'] {
+  color-scheme: dark;
+  --bg-app: #15171b;
+  --bg-panel: #1c1f24;
+  --bg-subtle: #23272e;
+  --bg-hover: #2a2f37;
+  --bg-selected: #263553;
+  --border: #30353e;
+  --text: #e6e8ec;
+  --text-muted: #9aa1ad;
+  --accent: #82a7ff;
+  --focus-ring: #82a7ff;
+  --run: #4cc777;
+  --pause: #f2b13c;
+  --stop: #ff6b5e;
+  --syntax-mnemonic: #82a7ff;
+  --syntax-register: #6fd28f;
+  --syntax-label: #ffb35c;
+  --syntax-constant: #da8cf0;
+  --syntax-variable: #5fd0d6;
+  --syntax-comment: #8a909a;
+  --syntax-error: #ff6b5e;
+  --exec-mark: rgb(52 199 89 / 30%);
+  --exec-mark-bar: #34c759;
+  --stack-row: #1f3a24;
+  --reg-eax: rgb(255 120 100 / 25%);
+  --reg-ebx: rgb(240 230 90 / 25%);
+  --reg-ecx: rgb(110 210 110 / 25%);
+  --reg-edx: rgb(120 120 230 / 25%);
+  --reg-esi: rgb(240 180 80 / 25%);
+  --reg-edi: rgb(220 120 220 / 25%);
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme='light']) {
+    color-scheme: dark;
+    --bg-app: #15171b;
+    --bg-panel: #1c1f24;
+    --bg-subtle: #23272e;
+    --bg-hover: #2a2f37;
+    --bg-selected: #263553;
+    --border: #30353e;
+    --text: #e6e8ec;
+    --text-muted: #9aa1ad;
+    --accent: #82a7ff;
+    --focus-ring: #82a7ff;
+    --run: #4cc777;
+    --pause: #f2b13c;
+    --stop: #ff6b5e;
+    --syntax-mnemonic: #82a7ff;
+    --syntax-register: #6fd28f;
+    --syntax-label: #ffb35c;
+    --syntax-constant: #da8cf0;
+    --syntax-variable: #5fd0d6;
+    --syntax-comment: #8a909a;
+    --syntax-error: #ff6b5e;
+    --exec-mark: rgb(52 199 89 / 30%);
+    --exec-mark-bar: #34c759;
+    --stack-row: #1f3a24;
+    --reg-eax: rgb(255 120 100 / 25%);
+    --reg-ebx: rgb(240 230 90 / 25%);
+    --reg-ecx: rgb(110 210 110 / 25%);
+    --reg-edx: rgb(120 120 230 / 25%);
+    --reg-esi: rgb(240 180 80 / 25%);
+    --reg-edi: rgb(220 120 220 / 25%);
+  }
+}

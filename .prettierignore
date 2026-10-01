@@ -1,0 +1,11 @@
+dist
+coverage
+.angular
+package-lock.json
+spec
+reference
+docs
+test-results
+playwright-report
+LICENSE.md
+README.md
