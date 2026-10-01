@@ -5,17 +5,11 @@ import { runHeadless } from '../app/core';
 
 const programs = join(__dirname, '../../spec/conformance/programs');
 
-/** Conformance programs the core already handles; the list grows to all 44 in M2. */
-const PASSING = [
-  '01-mov-sizes',
-  '05-inc-dec-neg',
-  '22-data-directives',
-  '24-label-on-own-line',
-  '30-errors',
-  '31-runtime-stack-underflow',
-  '34-runtime-mem-oob',
-  '35-push-sizes',
-];
+/** Every conformance program, by base name. */
+const PROGRAMS = readdirSync(programs)
+  .filter((f) => f.endsWith('.asm'))
+  .map((f) => f.slice(0, -'.asm'.length))
+  .sort();
 
 describe('conformance programs', () => {
   it('finds the programs', () => {
@@ -24,7 +18,7 @@ describe('conformance programs', () => {
     );
   });
 
-  it.each(PASSING)('%s', (name) => {
+  it.each(PROGRAMS)('%s', (name) => {
     const port = join(programs, `${name}.port.expected`);
     const expected = readFileSync(
       existsSync(port) ? port : join(programs, `${name}.expected`),
