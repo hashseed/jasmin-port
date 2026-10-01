@@ -7,6 +7,7 @@ export type ActionId =
   | 'new'
   | 'open'
   | 'save'
+  | 'saveAs'
   | 'saveMemory'
   | 'loadMemory'
   | 'closeDocument'
@@ -95,12 +96,21 @@ export class ActionsService {
       tooltip: 'Save Sourcecode',
       shortcut: 'Ctrl+S',
       enabled: this.idle,
-      run: () => this.withDoc((d) => this.files.saveCode(d)),
+      run: () => this.withDoc((d) => void this.files.saveCode(d)),
+    },
+    // Port addition, keyboard only: Save Code always writes back once the document
+    // has a file (09 §2), so this is the way to save under another name.
+    saveAs: {
+      label: 'Save Code As',
+      tooltip: 'Save Sourcecode as',
+      shortcut: 'Ctrl+Shift+S',
+      enabled: this.idle,
+      run: () => this.withDoc((d) => void this.files.saveCodeAs(d)),
     },
     saveMemory: {
       label: 'Save Memory',
       enabled: this.idle,
-      run: () => this.withDoc((d) => this.files.saveMemory(d)),
+      run: () => this.withDoc((d) => void this.files.saveMemory(d)),
     },
     loadMemory: {
       label: 'Load Memory',

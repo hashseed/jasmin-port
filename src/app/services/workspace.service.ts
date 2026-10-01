@@ -1,9 +1,12 @@
 import {
+  DOCUMENT,
+  DestroyRef,
   Injectable,
   InjectionToken,
   Signal,
   WritableSignal,
   computed,
+  effect,
   inject,
   signal,
 } from '@angular/core';
@@ -111,6 +114,29 @@ export class WorkspaceService {
     const tab = this.selected();
     return tab?.kind === 'help' ? tab.help : null;
   });
+  /** Some open document has edits not yet saved to its file. */
+  readonly hasUnsavedEdits = computed(() =>
+    this.tabList().some((t) => t.kind === 'document' && t.doc.modified()),
+  );
+
+  constructor() {
+    // Q-UI-5 (spec 02 §1 port note): the only unsaved-changes prompt is the
+    // browser's own, and the listener is registered only while there are edits.
+    const win = inject(DOCUMENT).defaultView;
+    const onBeforeUnload = (event: BeforeUnloadEvent) => {
+      event.preventDefault();
+      event.returnValue = 'unsaved';
+    };
+    let registered = false;
+    const setRegistered = (on: boolean) => {
+      if (!win || on === registered) return;
+      registered = on;
+      if (on) win.addEventListener('beforeunload', onBeforeUnload);
+      else win.removeEventListener('beforeunload', onBeforeUnload);
+    };
+    effect(() => setRegistered(this.hasUnsavedEdits()));
+    inject(DestroyRef).onDestroy(() => setRegistered(false));
+  }
 
   /** File > New: a document titled `new document` (spec 09 §2). */
   newDocument(title = 'new document', text = ''): DocumentStore {
