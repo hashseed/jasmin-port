@@ -87,6 +87,14 @@ export class DocumentStore {
     this.versionState.update((v) => v + 1);
   }
 
+  /**
+   * Re-renders the panels after the UI wrote to the machine directly (a register,
+   * flag, FPU or memory edit). Does not touch the change counter (spec 04 §8).
+   */
+  refreshPanels(): void {
+    this.versionState.update((v) => v + 1);
+  }
+
   step(): void {
     this.session.step();
     this.sync();

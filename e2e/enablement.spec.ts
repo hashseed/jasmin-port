@@ -183,8 +183,6 @@ test.describe('enablement (spec 02 §4)', () => {
     await expect(runPause).toHaveClass(/running/);
     await page.getByRole('button', { name: 'Stop the program' }).click();
     await expect(runPause).not.toHaveClass(/running/);
-    await expect(page.getByRole('region', { name: 'Registers', exact: true })).toContainText(
-      'EIP:0',
-    );
+    await expect(page.getByRole('textbox', { name: 'EIP', exact: true })).toHaveValue('0');
   });
 });

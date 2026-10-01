@@ -72,15 +72,16 @@ test('Step, Run, Pause and Reset drive the document session', async ({ page }) =
   await page.goto('/');
   await page.keyboard.press('Alt+n');
   const registers = page.getByRole('region', { name: 'Registers', exact: true });
+  const register = (name: string) => registers.getByRole('textbox', { name, exact: true });
   await page.getByLabel('Program code').fill('mov eax, 4\nmov ebx, 6');
   await page.keyboard.press('F7');
-  await expect(registers).toContainText('EAX:4');
-  await expect(registers).toContainText('EIP:1');
+  await expect(register('EAX')).toHaveValue('4');
+  await expect(register('EIP')).toHaveValue('1');
   await page.keyboard.press('F5');
-  await expect(registers).toContainText('EBX:6');
+  await expect(register('EBX')).toHaveValue('6');
   await page.getByRole('button', { name: 'Reset the memory and all registers' }).click();
-  await expect(registers).toContainText('EAX:0');
-  await expect(registers).toContainText('EIP:0');
+  await expect(register('EAX')).toHaveValue('0');
+  await expect(register('EIP')).toHaveValue('0');
 });
 
 test('Ctrl+Z and Ctrl+Y undo and redo editor changes', async ({ page }) => {
@@ -89,12 +90,12 @@ test('Ctrl+Z and Ctrl+Y undo and redo editor changes', async ({ page }) => {
   const editor = page.getByLabel('Program code');
   await editor.click();
   await editor.pressSequentially('nop');
-  await expect(editor).toHaveValue('nop');
+  await expect(editor).toHaveText('nop');
   await page.keyboard.press('Control+z');
-  await expect(editor).toHaveValue('no');
+  await expect(editor).toHaveText('no');
   await page.keyboard.press('Control+y');
-  await expect(editor).toHaveValue('nop');
+  await expect(editor).toHaveText('nop');
   await page.keyboard.press('Control+z');
   await page.keyboard.press('Control+Shift+z');
-  await expect(editor).toHaveValue('nop');
+  await expect(editor).toHaveText('nop');
 });
