@@ -223,6 +223,17 @@ export class DataSpace {
     };
   }
 
+  setFlags(flags: FlagState): void {
+    this.fCarry = flags.CF;
+    this.fOverflow = flags.OF;
+    this.fSign = flags.SF;
+    this.fZero = flags.ZF;
+    this.fParity = flags.PF;
+    this.fAuxiliary = flags.AF;
+    this.fTrap = flags.TF;
+    this.fDirection = flags.DF;
+  }
+
   // ---- writes ----
 
   private putInteger(value: bigint, a: Address): void {
@@ -363,6 +374,16 @@ export class DataSpace {
     }
   }
 
+  /** Label markers keyed by memory address and by register index (for snapshots). */
+  getLabelCells(): { memory: Map<number, MemCellInfo>; registers: Map<number, MemCellInfo> } {
+    return { memory: new Map(this.memInfo), registers: new Map(this.regInfo) };
+  }
+
+  setLabelCells(memory: Map<number, MemCellInfo>, registers: Map<number, MemCellInfo>): void {
+    this.memInfo = new Map(memory);
+    this.regInfo = new Map(registers);
+  }
+
   // ---- change tracking ----
 
   updateDirty(): void {
@@ -417,6 +438,16 @@ export class DataSpace {
 
   get nextFree(): number {
     return this.nextReservableAddress;
+  }
+
+  set nextFree(address: number) {
+    this.nextReservableAddress = address;
+  }
+
+  /** Replaces all variables and constants (snapshots, spec 04 §9.10). */
+  setSymbols(variables: Map<string, number>, constants: Map<string, bigint>): void {
+    this.variables = new Map(variables);
+    this.constants = new Map(constants);
   }
 
   registerVariable(label: string): void {

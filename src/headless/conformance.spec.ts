@@ -1,7 +1,14 @@
 import { readdirSync, readFileSync, existsSync } from 'node:fs';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { runHeadless } from '../app/core';
+import {
+  DataSpace,
+  Interpreter,
+  Program,
+  formatStateDump,
+  machineStateOf,
+  runHeadless,
+} from '../app/core';
 
 const programs = join(__dirname, '../../spec/conformance/programs');
 
@@ -32,5 +39,25 @@ describe('conformance programs', () => {
     expect(normalize(runHeadless(readFileSync(join(programs, `${name}.asm`), 'utf8')))).toBe(
       normalize(expected.split('\n')),
     );
+  });
+
+  it.each(PROGRAMS)('%s gives the same result with Run as with Step', (name) => {
+    const source = readFileSync(join(programs, `${name}.asm`), 'utf8');
+    const dsp = new DataSpace(4096, 0);
+    const program = new Program(dsp);
+    program.setText(source);
+    const interpreter = new Interpreter(dsp, program);
+    const output: string[] = [];
+    interpreter.beginRun(() => false);
+    for (let batches = 0; batches < 100; batches++) {
+      const outcome = interpreter.runSteps(1000, () => false);
+      if (outcome.kind === 'continue' || outcome.kind === 'sleep') continue;
+      if (outcome.kind === 'error')
+        output.push(`ERROR line ${outcome.line}: ${outcome.error.errorMsg}`);
+      break;
+    }
+    interpreter.endRun();
+    output.push(...formatStateDump(machineStateOf(dsp)));
+    expect(output).toEqual(runHeadless(source).filter((line) => !line.startsWith('PARSE ')));
   });
 });
