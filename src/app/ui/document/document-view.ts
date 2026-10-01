@@ -3,7 +3,7 @@ import { DocumentStore, SplitName } from '../../services/document-store';
 import { SettingsService } from '../../services/settings.service';
 import { PanelCard } from '../common/panel-card';
 import { SplitPane } from '../common/split-pane';
-import { PlainEditor } from '../editor/plain-editor';
+import { CodeEditor } from '../editor/code-editor';
 import { FpuPanel } from '../panels/fpu/fpu-panel';
 import { MemoryPanel } from '../panels/memory/memory-panel';
 import { FlagsPanel } from '../panels/registers/flags-panel';
@@ -41,7 +41,7 @@ export const SPLIT_DEFAULTS: Record<SplitName, (size: number) => number> = {
   imports: [
     SplitPane,
     PanelCard,
-    PlainEditor,
+    CodeEditor,
     BottomPane,
     RegistersPanel,
     FlagsPanel,
@@ -94,12 +94,11 @@ export const SPLIT_DEFAULTS: Record<SplitName, (size: number) => number> = {
           [defaultPosition]="defaults.split4"
           (committed)="persist('split4', $event)"
         >
-          <div first class="stack">
-            <app-panel-card heading="Editor" milestone="M5" class="editor">
-              <app-plain-editor [doc]="doc()" />
-            </app-panel-card>
-            <div class="error-line" role="status" aria-label="Error">{{ doc().error() }}</div>
-          </div>
+          <app-panel-card first heading="Editor" class="editor">
+            @defer (on immediate) {
+              <app-code-editor [doc]="doc()" />
+            }
+          </app-panel-card>
           <app-bottom-pane second [idPrefix]="'bottom-' + doc().id" />
         </app-split-pane>
         <app-panel-card second heading="Memory" class="memory">
@@ -112,11 +111,8 @@ export const SPLIT_DEFAULTS: Record<SplitName, (size: number) => number> = {
     :host {
       display: flex;
       height: 100%;
-      padding: 3px;
-    }
-    .stack {
-      display: flex;
-      flex-direction: column;
+      /* Card margin (3px) + this = the 9px card-divider-card gap at the window edges too. */
+      padding: 6px;
     }
     .registers,
     .editor {
@@ -133,11 +129,6 @@ export const SPLIT_DEFAULTS: Record<SplitName, (size: number) => number> = {
     }
     .memory {
       --panel-pad: var(--space-1) 0 0;
-    }
-    .error-line {
-      min-height: 20px;
-      padding: 0 var(--space-3);
-      color: var(--syntax-error);
     }
   `,
 })

@@ -90,12 +90,12 @@ test('Ctrl+Z and Ctrl+Y undo and redo editor changes', async ({ page }) => {
   const editor = page.getByLabel('Program code');
   await editor.click();
   await editor.pressSequentially('nop');
-  await expect(editor).toHaveValue('nop');
+  await expect(editor).toHaveText('nop');
   await page.keyboard.press('Control+z');
-  await expect(editor).toHaveValue('no');
+  await expect(editor).toHaveText('no');
   await page.keyboard.press('Control+y');
-  await expect(editor).toHaveValue('nop');
+  await expect(editor).toHaveText('nop');
   await page.keyboard.press('Control+z');
   await page.keyboard.press('Control+Shift+z');
-  await expect(editor).toHaveValue('nop');
+  await expect(editor).toHaveText('nop');
 });
