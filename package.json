@@ -1,6 +1,8 @@
 {
   "name": "jasmin-port",
   "version": "1.0.0",
+  "description": "Jasmin, the x86 assembler simulator from TU München, as a client-side web app",
+  "license": "GPL-2.0-only",
   "scripts": {
     "ng": "ng",
     "start": "ng serve",

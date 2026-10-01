@@ -243,17 +243,21 @@ properties in `theme/`:
 
 | Token | Original | Light | Dark |
 |---|---|---|---|
-| mnemonic | `rgb(0,0,144)` bold | `#1d3fbf` bold | `#82a7ff` bold |
-| register | `rgb(0,144,40)` bold | `#16803a` bold | `#6fd28f` bold |
-| label | `rgb(255,144,0)` bold | `#c56a00` bold | `#ffb35c` bold |
-| constant | `rgb(174,0,204)` bold | `#9b1fb8` bold | `#da8cf0` bold |
-| variable | `rgb(0,128,128)` bold | `#0f7f86` bold | `#5fd0d6` bold |
-| comment | `rgb(128,128,128)` italic | `#7a7f87` italic | `#8a909a` italic |
-| error | red underline | `#d92d20` wavy underline | `#ff6b5e` wavy underline |
-| execution mark | `rgb(0,255,0)` | `#34c759` row band at 35% plus a solid 3 px left bar | same hue, 30% |
+| mnemonic | `rgb(0,0,144)` bold | `#1d3fbf` bold | `#92b2ff` bold |
+| register | `rgb(0,144,40)` bold | `#0e6b2d` bold | `#6fd28f` bold |
+| label | `rgb(255,144,0)` bold | `#9a5100` bold | `#ffb35c` bold |
+| constant | `rgb(174,0,204)` bold | `#8c1aa6` bold | `#e29df4` bold |
+| variable | `rgb(0,128,128)` bold | `#0a666c` bold | `#5fd0d6` bold |
+| comment | `rgb(128,128,128)` italic | `#5d636c` italic | `#a4aab3` italic |
+| error | red underline | `#b7241a` wavy underline | `#ff8b80` wavy underline |
+| execution mark | `rgb(0,255,0)` | `#34c759` row band at 28% plus a solid 3 px left bar | same hue, 20% |
 | stack rows | `rgb(210,240,200)` | `#e3f4dc` | `#1f3a24` |
 | changed value | bold | bold plus a short fade-in accent | same |
 | register highlights | EAX..EDI pastels | same pastels, slightly desaturated | 25% tints of the same hues |
+
+The values above were retuned in M9 so every syntax color reaches WCAG AA (4.5:1) on
+the panel background, the read-only background and the execution mark, in both themes
+(`src/app/theme/tokens.css` is the source of truth).
 
 Typography: Inter 13 px for UI, JetBrains Mono 13 px for the editor and all numeric
 cells. The `font` setting still exists; its list gains the bundled fonts, and the
