@@ -1,27 +1,36 @@
 import { ChangeDetectionStrategy, Component, input, signal } from '@angular/core';
 import { DocumentStore } from '../../services/document-store';
+import { ConsoleView } from '../devices/console-view';
+import { GraphicsView } from '../devices/graphics-view';
+import { SevenSegmentView } from '../devices/seven-segment-view';
+import { StripLightView } from '../devices/strip-light-view';
 import { ContextHelp } from '../help/context-help';
 
 /** Bottom tabs of the center column, in the original order (spec 02 §5). */
 export const BOTTOM_TABS = ['Help', '7-Segment', 'StripLight', 'Console', 'Graphics'] as const;
 type BottomTab = (typeof BOTTOM_TABS)[number];
 
-const MILESTONE: Record<BottomTab, string> = {
-  Help: 'M6',
-  '7-Segment': 'M7',
-  StripLight: 'M7',
-  Console: 'M7',
-  Graphics: 'M7',
-};
+/**
+ * Device tabs fill the pane edge to edge (spec 06: scaled and centered). Their
+ * views (and the dialogs they use) load lazily, when a device tab is first shown.
+ */
+const DEVICE_TABS: ReadonlySet<BottomTab> = new Set([
+  '7-Segment',
+  'StripLight',
+  'Console',
+  'Graphics',
+]);
 
 /**
  * The bottom tab pane with its tabs on the left edge as stacked horizontal
- * labels. `Help` is the context help pane (spec 02 §11); the devices arrive in M7.
+ * labels. `Help` is the context help pane (spec 02 §11); the device tabs show the
+ * document's I/O devices (spec 06). Only the selected one is rendered, while the
+ * document's DeviceSet keeps their state.
  */
 @Component({
   selector: 'app-bottom-pane',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [ContextHelp],
+  imports: [ContextHelp, SevenSegmentView, StripLightView, ConsoleView, GraphicsView],
   template: `
     <div class="side" role="tablist" aria-orientation="vertical" aria-label="Tools">
       @for (tab of tabs; track tab) {
@@ -43,13 +52,34 @@ const MILESTONE: Record<BottomTab, string> = {
       role="tabpanel"
       [id]="idPrefix() + '-panel'"
       [attr.aria-label]="selected()"
+      [class.device]="deviceTabs.has(selected())"
     >
-      @if (selected() === 'Help') {
-        @defer (on immediate) {
-          <app-context-help [doc]="doc()" />
+      @switch (selected()) {
+        @case ('7-Segment') {
+          @defer (on immediate) {
+            <app-seven-segment-view [doc]="doc()" />
+          }
         }
-      } @else {
-        <p class="placeholder">{{ selected() }} (placeholder · {{ milestone[selected()] }})</p>
+        @case ('StripLight') {
+          @defer (on immediate) {
+            <app-strip-light-view [doc]="doc()" />
+          }
+        }
+        @case ('Console') {
+          @defer (on immediate) {
+            <app-console-view [doc]="doc()" />
+          }
+        }
+        @case ('Graphics') {
+          @defer (on immediate) {
+            <app-graphics-view [doc]="doc()" />
+          }
+        }
+        @default {
+          @defer (on immediate) {
+            <app-context-help [doc]="doc()" />
+          }
+        }
       }
     </div>
   `,
@@ -95,16 +125,17 @@ const MILESTONE: Record<BottomTab, string> = {
       overflow: auto;
       padding: var(--space-2) var(--space-3);
     }
-    .placeholder {
-      margin: 0 0 var(--space-2);
-      color: var(--text-muted);
+    .content.device {
+      display: flex;
+      padding: 0;
+      overflow: hidden;
     }
   `,
 })
 export class BottomPane {
   readonly idPrefix = input.required<string>();
   readonly doc = input.required<DocumentStore>();
+  protected readonly deviceTabs = DEVICE_TABS;
   protected readonly tabs = BOTTOM_TABS;
-  protected readonly milestone = MILESTONE;
   protected readonly selected = signal<BottomTab>('Help');
 }

@@ -36,8 +36,9 @@ module.exports = defineConfig([
   },
   {
     // The interpreter core runs in the browser and under Node (spec 01 §2, 08 §4):
-    // no Angular, RxJS, Node or browser APIs.
-    files: ['src/app/core/**/*.ts'],
+    // no Angular, RxJS, Node or browser APIs. The device models (devices/) follow the
+    // same rules so they are unit-tested in plain Node; their canvases live in ui/devices.
+    files: ['src/app/core/**/*.ts', 'src/app/devices/**/*.ts'],
     rules: {
       'no-restricted-imports': [
         'error',
@@ -45,10 +46,16 @@ module.exports = defineConfig([
           patterns: [
             {
               group: ['@angular/*', 'rxjs', 'rxjs/*'],
-              message: 'core/ must not depend on Angular or RxJS.',
+              message: 'core/ and devices/ must not depend on Angular or RxJS.',
             },
-            { group: ['node:*', 'fs', 'path'], message: 'core/ must not depend on Node APIs.' },
-            { group: ['**/ui/**', '**/services/**'], message: 'core/ must not import UI code.' },
+            {
+              group: ['node:*', 'fs', 'path'],
+              message: 'core/ and devices/ must not depend on Node APIs.',
+            },
+            {
+              group: ['**/ui/**', '**/services/**'],
+              message: 'core/ and devices/ must not import UI code.',
+            },
           ],
         },
       ],
@@ -66,7 +73,7 @@ module.exports = defineConfig([
           'Buffer',
         ].map((name) => ({
           name,
-          message: 'core/ must not use browser or Node globals.',
+          message: 'core/ and devices/ must not use browser or Node globals.',
         })),
       ],
     },

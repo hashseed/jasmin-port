@@ -71,7 +71,7 @@
         "test": {
           "builder": "@angular/build:unit-test",
           "options": {
-            "exclude": ["src/app/core/**", "src/headless/**"]
+            "exclude": ["src/app/core/**", "src/app/devices/**", "src/headless/**"]
           }
         },
         "lint": {

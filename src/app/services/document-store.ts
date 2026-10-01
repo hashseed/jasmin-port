@@ -1,5 +1,6 @@
 import { Signal, WritableSignal, computed, signal } from '@angular/core';
 import { MachineSession, SessionEvent } from '../core';
+import { DeviceSet } from '../devices';
 import type { FileHandle } from './file-access';
 
 /**
@@ -70,6 +71,8 @@ export class DocumentStore {
   editor: EditorHandle | null = null;
 
   readonly layout: SplitLayout;
+  /** The I/O devices of the bottom pane (spec 06); their configuration lives as long as the tab. */
+  readonly devices: DeviceSet;
 
   private readonly unsubscribe: () => void;
 
@@ -87,6 +90,7 @@ export class DocumentStore {
       split3: signal(layout.split3 ?? null),
       split4: signal(layout.split4 ?? null),
     };
+    this.devices = new DeviceSet(session);
     this.unsubscribe = session.subscribe((event) => this.onEvent(event));
     this.sync();
   }
@@ -171,6 +175,7 @@ export class DocumentStore {
   dispose(): void {
     this.session.pause();
     this.unsubscribe();
+    this.devices.dispose();
     this.editor = null;
   }
 
