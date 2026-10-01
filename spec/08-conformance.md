@@ -89,5 +89,5 @@ The golden programs cover the interpreter core. The port also needs tests for:
   Java `Double.toString` formatting in the FPU table.
 - **Devices** (06): bit-to-segment/lamp/pixel mapping, console array and pipe modes.
 - **FIX items** not covered above: Q-P-1, Q-P-3, Q-P-4, Q-P-6, Q-I-6, Q-I-7, Q-I-8,
-  Q-I-14, Q-FPU-1, Q-SN-1, Q-SN-2, plus `AF` after `DEC`/`NEG`/`SBB`/`SCAS` (Q-F-1) and
+  Q-I-14, Q-I-16 (`cmove al, bl`, `cmove eax, 5` rejected), Q-FPU-1, Q-SN-1, Q-SN-2, plus `AF` after `DEC`/`NEG`/`SBB`/`SCAS` (Q-F-1) and
   `push 100000` / `pop [x]` sizes (Q-I-13).

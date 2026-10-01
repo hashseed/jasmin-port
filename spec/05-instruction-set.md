@@ -17,7 +17,7 @@ Quirk IDs (`Q-...`) refer to [07-known-quirks.md](07-known-quirks.md).
 | Mnemonics | Operands | Semantics | Flags | Notes |
 |---|---|---|---|---|
 | `MOV` | dest r/m; src r/m/imm/short string/variable/label/constant | dest := src | none | src size must not exceed dest (`Operand too large...`); register sizes must match (`Size mismatch`). Storing a label marks the cell (04 §4). A third operand is silently accepted. |
-| `CMOVcc` (cc from §11, 30 forms: `CMOVA CMOVAE CMOVB CMOVBE CMOVC CMOVE CMOVG CMOVGE CMOVL CMOVLE CMOVNA CMOVNAE CMOVNB CMOVNBE CMOVNC CMOVNE CMOVNG CMOVNGE CMOVNL CMOVNLE CMOVNO CMOVNP CMOVNS CMOVNZ CMOVO CMOVP CMOVPE CMOVPO CMOVS CMOVZ`) | same as MOV | if cc: dest := src | none | Accepts immediates and 8-bit, unlike real x86 (07 Q-I-16, decision pending). |
+| `CMOVcc` (cc from §11, 30 forms: `CMOVA CMOVAE CMOVB CMOVBE CMOVC CMOVE CMOVG CMOVGE CMOVL CMOVLE CMOVNA CMOVNAE CMOVNB CMOVNBE CMOVNC CMOVNE CMOVNG CMOVNGE CMOVNL CMOVNLE CMOVNO CMOVNP CMOVNS CMOVNZ CMOVO CMOVP CMOVPE CMOVPO CMOVS CMOVZ`) | dest r16/r32; src r16/r32/m16/m32 of the same size | if cc: dest := src | none | The original accepted anything MOV accepts, including immediates and 8-bit operands; the port follows x86 (07 Q-I-16). |
 | `XCHG` | (m, r) or (r, r/m), equal sizes | swap | none | |
 | `MOVZX` | r16 <- r8/m8; r32 <- r8/r16/m8/m16 | zero-extend | none | Q-I-6 (validation gap) |
 | `MOVSX` | as MOVZX | sign-extend | none | *signed*. Q-I-6 |
