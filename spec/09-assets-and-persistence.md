@@ -53,7 +53,7 @@ shipped; the samples may be offered as examples.
 
 ## 2. Document names
 
-- New documents are titled `new document` (02 §2). Opening or saving `.asm` sets the
+- New documents are titled `new program` (02 §2; *port note:* the original says `new document`, renamed on the owner's request, 2026-10-02). Opening or saving `.asm` sets the
   tab title to the file name without path; the window title follows (02 §1).
 - Save Code is always a "save as" dialog in the original. *Port note:* each document
   remembers the file it was opened from or last saved to (a File System Access API

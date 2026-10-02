@@ -15,7 +15,7 @@ export const PORT_URL = SOURCE_URL;
     <section>
       <h2>Getting started</h2>
       <ol>
-        <li>Open a new document with <em>New File</em> (Alt+N).</li>
+        <li>Start a new program with <em>New File</em> (Alt+N).</li>
         <li>
           Type a program, one instruction per line, for example
           <code>mov eax, 5</code> and <code>add eax, 7</code>.

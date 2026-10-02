@@ -120,7 +120,7 @@ describe('FileService (spec 02 §13, 09 §2, §4)', () => {
     expect(doc.modified()).toBe(true);
     fs.nextSaveName = 'hello';
     expect(await files.saveCode(doc)).toBe(true);
-    expect(fs.calls).toEqual(['saveAs asm new document.asm near=-']);
+    expect(fs.calls).toEqual(['saveAs asm new program.asm near=-']);
     expect(fs.files.get('hello.asm')).toBe('nop');
     expect(doc.title()).toBe('hello.asm');
     expect(doc.modified()).toBe(false);
@@ -186,7 +186,7 @@ describe('FileService (spec 02 §13, 09 §2, §4)', () => {
     fs.nextSaveName = null;
     expect(await files.saveCode(doc)).toBe(false);
     expect(doc.modified()).toBe(true);
-    expect(doc.title()).toBe('new document');
+    expect(doc.title()).toBe('new program');
   });
 
   it('an I/O error shows its text in a message and keeps the document modified', async () => {

@@ -52,7 +52,7 @@ test.describe('help tabs (spec 02 §12)', () => {
     await expect(page.getByRole('heading', { name: 'Getting started' })).toBeVisible();
     await expect(page.locator('app-help-view img')).toHaveCount(0);
     await helpLinks(page).getByRole('link', { name: 'New File' }).click();
-    await expect(page.getByRole('tab', { name: 'new document' })).toHaveAttribute(
+    await expect(page.getByRole('tab', { name: 'new program' })).toHaveAttribute(
       'aria-selected',
       'true',
     );

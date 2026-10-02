@@ -74,7 +74,7 @@ export class DocumentStore {
 
   constructor(
     readonly session: MachineSession,
-    title = 'new document',
+    title = 'new program',
     layout: Partial<Record<SplitName, number | null>> = {},
   ) {
     this.title = signal(title);
