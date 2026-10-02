@@ -1,10 +1,10 @@
 import { DataSpace } from './data-space';
-import { long, shl, shr, sizeMask, TWO_32 } from './java';
+import { EVEN_PARITY, Flag } from './flags';
+import { long, shl, shr, sizeMask } from './java';
 import { Parameters } from './parameters';
 import { ParseError } from './parse-error';
 
-/** Flag selectors for `setFlags`. */
-export const Flag = { CF: 1, OF: 2, SF: 4, ZF: 8, PF: 16, AF: 32 } as const;
+export { Flag } from './flags';
 
 /** How the parser treats an instruction's label (spec 03 §7). */
 export type CommandKind = 'normal' | 'pseudo' | 'preproc';
@@ -13,13 +13,6 @@ export type CommandKind = 'normal' | 'pseudo' | 'preproc';
  * Base class of every instruction (port of `JasminCommand`). One instance per
  * document, bound to that document's machine.
  */
-/** 1 where a byte has an even number of set bits (PF). */
-const EVEN_PARITY = Uint8Array.from({ length: 256 }, (_, v) => {
-  let ones = 0;
-  for (let i = 0; i < 8; i++) ones += (v >> i) & 1;
-  return ones % 2 === 0 ? 1 : 0;
-});
-
 export abstract class Command {
   /** Mnemonics this class implements. */
   abstract readonly mnemonics: readonly string[];
@@ -81,8 +74,8 @@ export abstract class Command {
   /**
    * `setFlags` on numbers, for operations of `size` <= 4 bytes. `a`, `b` and `result`
    * are the Java long values as exact integers (any sign, |value| < 2^53), or any
-   * integers with the same bits 0..32: the flags depend on nothing else. Bitwise
-   * operators see the low 32 bits of their operands, two's complement.
+   * integers with the same bits 0..32: the flags depend on nothing else. The flags
+   * are computed lazily, when first read (`DataSpace.setFlagsLazy`).
    */
   protected setFlagsNum(
     size: number,
@@ -92,26 +85,7 @@ export abstract class Command {
     result: number,
     subtrahend: number,
   ): void {
-    const d = this.dsp;
-    const bits = size * 8;
-    const signShift = bits - 1;
-    if (flags & Flag.ZF) d.fZero = (bits === 32 ? result | 0 : result & ((1 << bits) - 1)) === 0;
-    if (flags & Flag.SF) d.fSign = ((result >> signShift) & 1) === 1;
-    if (flags & Flag.PF) d.fParity = EVEN_PARITY[result & 0xff] === 1;
-    if (flags & Flag.CF) {
-      // Bit `bits` of the result: carry (or borrow) out of the operand.
-      d.fCarry = (bits === 32 ? Math.floor(result / TWO_32) & 1 : (result >> bits) & 1) === 1;
-    }
-    if (flags & Flag.OF) {
-      const aSign = (a >> signShift) & 1;
-      const bSign = (b >> signShift) & 1;
-      const resultSign = (result >> signShift) & 1;
-      d.fOverflow = aSign === bSign && resultSign !== aSign;
-    }
-    if (flags & Flag.AF) {
-      // Carry or borrow out of bit 3 (07 Q-F-1): bit 4 of a ^ b ^ result.
-      d.fAuxiliary = ((a ^ subtrahend ^ result) & 0x10) !== 0;
-    }
+    this.dsp.setFlagsLazy(size, flags, a, b, result, subtrahend);
   }
 
   /** `setFlags` for 64-bit operands, on bigints as in the original. */

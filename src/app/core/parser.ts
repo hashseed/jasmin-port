@@ -336,8 +336,11 @@ export class Parser {
       }
     }
 
+    // The command's own spelling of the mnemonic: a string constant, which the
+    // instructions compare (`p.mnemo === 'ADD'`) faster than the parsed token.
+    const mnemo = cmd.mnemonics.find((m) => m === command) ?? command!;
     const param = new Parameters(this.dsp);
-    param.set(string, command!, args, cmd.defaultSize(command!), cmd.signed());
+    param.set(string, mnemo, args, cmd.defaultSize(mnemo), cmd.signed());
     if (lastLabel !== null) param.label = lastLabel;
     for (const a of args) for (const label of a.usedLabels) result.usedLabels.add(label);
 
@@ -386,7 +389,11 @@ export class Parser {
    * advances the change counter once at the end instead (`advanceCounter = false`).
    */
   run(command: Command, param: Parameters, advanceCounter = false): ParseError | null {
-    const error = command.execute(param);
+    return this.checkResult(command.execute(param), advanceCounter);
+  }
+
+  /** The end of `run`: `error` is what the instruction returned. */
+  checkResult(error: ParseError | null | void, advanceCounter: boolean): ParseError | null {
     if (error) {
       this.dsp.clearAddressOutOfRange();
       return error;
