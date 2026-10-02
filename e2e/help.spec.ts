@@ -52,7 +52,7 @@ test.describe('help tabs (spec 02 §12)', () => {
       'aria-selected',
       'true',
     );
-    await expect(page.locator('.cm-content')).toContainText('aussenschleife:');
+    await expect(page.locator('.cm-content')).toContainText('outer_loop:');
   });
 
   test('Welcome links: New File creates a document, Open File opens one', async ({ page }) => {
