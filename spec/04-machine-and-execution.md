@@ -202,6 +202,16 @@ other panels (registers, flags, memory and stack, FPU) also refresh during the r
 most every 100 ms; the change counter still advances only when the run stops, so bold
 marks are settled then. An infinite loop must stay pausable.
 
+*Port note:* Run may execute lines it has already parsed in this run as compiled code
+(ranges of lines turned into JavaScript functions, `src/app/core/compiled-run.ts`)
+instead of one by one. The observable behavior is identical: the same registers, flags,
+memory, change stamps and I/O device writes, the same stops at breakpoints (including
+the ignored first one and breakpoints set during the run), the same error lines and
+messages (07 Q-E-1), `JASMINSLEEP` delays, and addresses computed on every execution
+(07 Q-I-18). Compiled code checks a line budget at every jump, so Pause and the live
+panel refreshes keep working in tight loops, and whenever Run yields, the state is
+exactly that of the lines executed so far.
+
 ### 9.4 Execute current line (F9, toolbar)
 Parses and executes the line containing the caret, independent of EIP. EIP is not
 advanced; instructions that set EIP (`JMP`, `Jcc`, `LOOP`, `CALL`, `RET`) still do.
