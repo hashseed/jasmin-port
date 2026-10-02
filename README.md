@@ -5,6 +5,8 @@ Universität München, rewritten in TypeScript and Angular. It looks and behaves
 the original Java desktop application and runs entirely client-side: no server, no
 install, just a static web page that keeps working offline once loaded.
 
+**Try it:** <https://hashseed.github.io/jasmin-port/>
+
 ![A program stepped through, with the stack in memory (light theme)](docs/screenshots/document-light.png)
 
 ## What it is
@@ -34,8 +36,12 @@ replaces the Swing look with a modern one, including a dark theme.
   pages).
 - **I/O devices**: 7-Segment display, StripLight, Console and Graphics, memory-mapped
   and live while the program runs.
+- **Samples** on the Welcome page: the original's 2007 example programs (sorting,
+  Fibonacci, prime factors, square root and more) and one program per I/O device.
 - **Files**: open and save `.asm` code and `.mem` machine snapshots (File System Access
-  API where available, downloads elsewhere); unsaved-changes warning on leaving.
+  API where available, downloads elsewhere). Closing a program with unsaved changes
+  asks whether to save it, and so does leaving the page. Double-click a tab (or press
+  F2) to rename it.
 - **Configuration**: editor font and size, memory size and start address, help
   language, and the theme (System, Light, Dark). Settings are stored in the browser.
 - **Keyboard and screen readers**: everything works without a mouse. F10 focuses the
@@ -86,7 +92,7 @@ Copy `dist/jasmin-port/browser/` to any static host. The app has no routes, so n
 rewrite rules are needed. The GitHub Actions workflow
 [`.github/workflows/pages.yml`](.github/workflows/pages.yml) deploys every push to
 `main` to GitHub Pages at https://hashseed.github.io/jasmin-port/ (Pages must be
-enabled with "GitHub Actions" as the source; private repositories need a paid plan).
+enabled with "GitHub Actions" as the source).
 
 ## Development
 
@@ -97,6 +103,7 @@ npm run typecheck         # tsc over the app, the specs, the headless runner and
 npm test                  # unit tests: core and devices in Node, components in jsdom
 npm run conformance       # spec/conformance programs against the headless runner
 npm run e2e               # Playwright end-to-end tests, including axe and performance
+npm run bench             # bubblesort benchmark, port against the original Java (bench/)
 ```
 
 `npm run e2e` starts a dev server on port 4300. Set `PW_CHROMIUM_PATH` to use a
@@ -133,7 +140,7 @@ src/
                 panels, help pages, device canvases, dialogs
     theme/      design tokens (CSS custom properties) for the light and dark themes
   headless/     run.ts: the Node runner used by the conformance tests
-public/         help pages, images and icons from the original (see NOTICE.txt)
+public/         help pages from the original (see NOTICE.txt), sample programs, icons
 e2e/            Playwright tests
 spec/           the specification of the original's UI and behavior
 docs/plan.md    implementation plan, milestones and visual direction
@@ -152,8 +159,8 @@ specification from the Java source ([`spec/`](spec/README.md)), including a list
 the original's quirks, each marked FIX or KEEP
 ([`spec/07-known-quirks.md`](spec/07-known-quirks.md)). It then built the app in
 milestones ([`docs/plan.md`](docs/plan.md)). Every pull request had to pass CI,
-including 44 conformance programs run headlessly against both the original Java
-interpreter and the port.
+including the conformance programs (now 51), whose expected results were recorded
+from the original Java interpreter.
 
 ## The original
 
@@ -170,7 +177,8 @@ Technische Universität München. Initial development by Yang Guo, Jakob Kummero
 Orend and Stefanie Schmid; initial documentation and tutorials by André Aichert,
 Matthias Kaiser and Sebastian Ullherr; maintained by Marcel Meyer, with additional
 credits to Johannes Roith and Alexander Ried. The port reuses the original's help
-pages, and its logo for the browser tab icon ([public/NOTICE.txt](public/NOTICE.txt)).
+pages ([public/NOTICE.txt](public/NOTICE.txt)) and adapted versions of its 2007
+sample programs; the icon was drawn for the port.
 
 The port uses [Angular](https://angular.dev), [CodeMirror](https://codemirror.net),
 [Lucide](https://lucide.dev) icons (ISC) and the [Inter](https://rsms.me/inter/) and
