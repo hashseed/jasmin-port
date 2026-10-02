@@ -5,3 +5,6 @@
 import { version } from '../../package.json';
 
 export const PORT_VERSION: string = version;
+
+/** Where the port's source lives; linked from the top right of the app. */
+export const SOURCE_URL = 'https://github.com/hashseed/jasmin-port';

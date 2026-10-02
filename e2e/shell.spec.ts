@@ -8,6 +8,17 @@ test('the shell renders with the Jasmin title, menus and Welcome tab', async ({ 
   await expect(page.getByRole('toolbar', { name: 'Toolbar' }).getByRole('button')).toHaveCount(17);
 });
 
+test('the top right links to the source on GitHub', async ({ page }) => {
+  await page.goto('/');
+  const link = page.getByRole('link', { name: 'Source code on GitHub' });
+  await expect(link).toHaveAttribute('href', 'https://github.com/hashseed/jasmin-port');
+  await expect(link).toHaveAttribute('target', '_blank');
+  const box = await link.boundingBox();
+  const width = page.viewportSize()!.width;
+  expect(box!.x + box!.width).toBeGreaterThan(width - 40);
+  expect(box!.y).toBeLessThan(40);
+});
+
 test('toolbar tooltips keep the original texts plus the shortcut', async ({ page }) => {
   await page.goto('/');
   const toolbar = page.getByRole('toolbar', { name: 'Toolbar' });
