@@ -49,7 +49,8 @@ test.describe('help tabs (spec 02 §12)', () => {
       delete (window as unknown as Record<string, unknown>)['showOpenFilePicker'];
     });
     await page.goto('/');
-    await expect(page.getByRole('img', { name: 'Jasmin' })).toBeVisible();
+    await expect(page.getByRole('heading', { name: 'Getting started' })).toBeVisible();
+    await expect(page.locator('app-help-view img')).toHaveCount(0);
     await helpLinks(page).getByRole('link', { name: 'New File' }).click();
     await expect(page.getByRole('tab', { name: 'new document' })).toHaveAttribute(
       'aria-selected',
@@ -72,8 +73,15 @@ test.describe('help tabs (spec 02 §12)', () => {
     await page.goto('/');
     const welcome = page.locator('app-help-view');
     await expect(welcome).toContainText('Version 1.5.11 (2016-10-28)');
-    await expect(welcome).toContainText(`Web port: version ${version},`);
+    await expect(welcome).toContainText(`Web port: version ${version}.`);
     await expect(welcome).toContainText('Lehrstuhl für Rechnertechnik und Rechnerorganisation');
+    await expect(
+      welcome.getByRole('link', { name: 'github.com/hashseed/jasmin-port' }),
+    ).toHaveAttribute('href', 'https://github.com/hashseed/jasmin-port');
+    await expect(welcome.getByRole('link', { name: 'github.com/TUM-LRR/Jasmin' })).toHaveAttribute(
+      'href',
+      'https://github.com/TUM-LRR/Jasmin',
+    );
     await helpLinks(page).getByRole('link', { name: 'Credits' }).click();
     await expect(welcome.locator('[data-anchor="credits"]')).toBeInViewport();
   });

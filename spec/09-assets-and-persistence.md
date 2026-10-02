@@ -40,8 +40,8 @@ offline once loaded.
 | `Welcome.htm` | Welcome page, opened in a help tab at start (02 §12.1) |
 | `Configuration.htm` | Configuration page (02 §12.2); its controls are live Swing widgets, so the port rebuilds it as an Angular component with the same texts and layout |
 | `jasminstyle.css` | Style of the two pages above |
-| `jasmin_logo.png` | Logo on both pages; also the window/tab icon |
-| `jasmin.jpg`, `jasmin2.jpg` | Photos on Welcome and Configuration |
+| `jasmin_logo.png` | Logo on both pages; also the window/tab icon (*port:* only the icon, cropped into `favicon.png`) |
+| `jasmin.jpg`, `jasmin2.jpg` | Photos on Welcome and Configuration (*port:* not used, §12.1 port note in 02) |
 | `lrr_logo.png`, `tum_logo.gif` | Chair and university logos (credits) |
 | `icons/*.png` (20) + `leer.gif` | Toolbar and menu icons (02 §3): `new`, `fileopen`, `filesaveas`, `undo`, `redo`, `editcut`, `editcopy`, `editpaste`, `back`, `forward`, `play_green`, `play_pause`, `play_step`, `play_current`, `play_stop`, `play_clear3`, `breakpoint`, `takesnapshot`, `loadsnapshot`, `configure`; `leer.gif` is an empty placeholder |
 

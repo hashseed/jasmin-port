@@ -14,8 +14,8 @@ import { ConfigurationPage } from './configuration-page';
 import { WelcomePage } from './welcome-page';
 
 /**
- * A help tab (spec 02 §12): the Welcome or Configuration page under the shared
- * header of `Welcome.htm`/`Configuration.htm` (logo and link row). `#new` and
+ * A help tab (spec 02 §12): the Welcome or Configuration page under a shared
+ * header (the name and the link row of `Welcome.htm`/`Configuration.htm`). `#new` and
  * `#openFile` run File > New and Open Code; the other links navigate within the
  * tab, which keeps its own back/forward history (toolbar Back/Forward).
  */
@@ -26,7 +26,10 @@ import { WelcomePage } from './welcome-page';
   template: `
     @let page = help().page();
     <article class="page">
-      <img class="logo" src="images/jasmin_logo.png" width="825" height="148" alt="Jasmin" />
+      <header class="masthead">
+        <p class="name">Jasmin</p>
+        <p class="tagline">An x86 assembler simulator for the browser</p>
+      </header>
       <nav class="links" aria-label="Help links">
         <a href="#new" (click)="run($event, 'new')">New File</a>
         | <a href="#openFile" (click)="run($event, 'open')">Open File</a>
@@ -74,37 +77,30 @@ import { WelcomePage } from './welcome-page';
       }
     }
     .page {
-      /* The original's 20% side margins, centered. */
-      width: 60%;
-      min-width: 560px;
+      max-width: 640px;
       margin: 0 auto;
-      padding: var(--space-4) 0 48px;
-      font-size: 15px;
-      line-height: 1.5;
-      text-align: center;
+      padding: 40px var(--space-4) 48px;
+      font-size: 14px;
+      line-height: 1.6;
       overflow-wrap: anywhere;
     }
-    /* Narrow screens: full width with the usual 16px gutters. */
-    @media (max-width: 799px) {
-      .page {
-        width: auto;
-        min-width: 0;
-        margin: 0 var(--space-4);
-      }
+    .masthead p {
+      margin: 0;
     }
-    .logo {
-      display: block;
-      width: min(100%, 560px);
-      height: auto;
-      margin: var(--space-4) auto var(--space-2);
-      border-radius: var(--radius);
+    .name {
+      font-size: 20px;
+      font-weight: 600;
+    }
+    .tagline {
+      color: var(--text-muted);
     }
     .links {
+      margin: var(--space-3) 0 24px;
       color: var(--text-muted);
     }
     a {
       color: var(--help-link);
-      font-weight: 700;
+      font-weight: 500;
       text-decoration: none;
     }
     a:hover {
