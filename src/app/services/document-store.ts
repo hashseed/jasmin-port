@@ -74,7 +74,7 @@ export class DocumentStore {
 
   constructor(
     readonly session: MachineSession,
-    title = 'new document',
+    title = 'new program',
     layout: Partial<Record<SplitName, number | null>> = {},
   ) {
     this.title = signal(title);
@@ -96,6 +96,17 @@ export class DocumentStore {
     this.session.setText(text);
     this.text.set(this.session.program.text);
     this.versionState.update((v) => v + 1);
+  }
+
+  /**
+   * Renames the document (tab rename, port addition). The name is trimmed; an empty
+   * name is rejected and the title kept. Returns whether the title was set.
+   */
+  rename(name: string): boolean {
+    const trimmed = name.trim();
+    if (trimmed === '') return false;
+    this.title.set(trimmed);
+    return true;
   }
 
   /** Records `text` (by default the current text) as the file's content after Open or Save Code. */

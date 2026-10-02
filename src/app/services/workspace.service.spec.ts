@@ -14,13 +14,13 @@ describe('WorkspaceService', () => {
     workspace = TestBed.inject(WorkspaceService);
   });
 
-  it('appends and selects new tabs titled "new document" (spec 09 §2)', () => {
+  it('appends and selects new tabs titled "new program" (spec 09 §2)', () => {
     workspace.openHelp('welcome');
     const a = workspace.newDocument();
     const b = workspace.newDocument();
     expect(workspace.tabs().length).toBe(3);
-    expect(a.title()).toBe('new document');
-    expect(b.title()).toBe('new document');
+    expect(a.title()).toBe('new program');
+    expect(b.title()).toBe('new program');
     expect(workspace.document()).toBe(b);
   });
 
@@ -45,7 +45,7 @@ describe('WorkspaceService', () => {
     expect(doc.session.running).toBe(false);
   });
 
-  it('new documents take memory size and split locations from the settings', () => {
+  it('new programs take memory size and split locations from the settings', () => {
     const settings = TestBed.inject(SettingsService);
     settings.set('memory', 8192);
     settings.set('split2.location', 280);
@@ -77,6 +77,15 @@ describe('WorkspaceService', () => {
     help.navigate('welcome'); // a new branch clears forward
     expect(help.canForward()).toBe(false);
     expect(help.title).toBe('Welcome');
+  });
+
+  it('renames a document with a trimmed, non-empty name (port addition)', () => {
+    const doc = workspace.newDocument();
+    expect(doc.rename('  loop demo  ')).toBe(true);
+    expect(doc.title()).toBe('loop demo');
+    expect(doc.rename('   ')).toBe(false);
+    expect(doc.rename('')).toBe(false);
+    expect(doc.title()).toBe('loop demo');
   });
 
   it('tracks unsaved edits per document (port addition)', () => {

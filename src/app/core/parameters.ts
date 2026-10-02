@@ -185,13 +185,23 @@ export class Parameters {
   }
 
   put(index: number, value: bigint, info: MemCellInfo | null): void {
+    this.putAddress(this.addressOf(index), value, info);
+  }
+
+  /**
+   * Argument `index`'s address, with a memory operand's effective address computed
+   * from the current registers. Run reuses parsed lines, so an address computed at
+   * parse time would be stale (07 Q-I-18).
+   */
+  addressOf(index: number): Address {
     const arg = this.argument(index);
     if (arg.cAddress) arg.address.address = arg.cAddress.calculateEffectiveAddress(true);
-    this.putAddress(arg.address, value, info);
+    return arg.address;
   }
 
   putF(index: number, value: number, dataType: number): void {
     const arg = this.argument(index);
+    this.addressOf(index);
     if (matches(arg.address.type, Op.MEM)) {
       if (dataType === FpuDataType.FLOAT) {
         let bits = 0n;

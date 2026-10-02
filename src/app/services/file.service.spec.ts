@@ -120,11 +120,30 @@ describe('FileService (spec 02 §13, 09 §2, §4)', () => {
     expect(doc.modified()).toBe(true);
     fs.nextSaveName = 'hello';
     expect(await files.saveCode(doc)).toBe(true);
-    expect(fs.calls).toEqual(['saveAs asm new document.asm near=-']);
+    expect(fs.calls).toEqual(['saveAs asm new program.asm near=-']);
     expect(fs.files.get('hello.asm')).toBe('nop');
     expect(doc.title()).toBe('hello.asm');
     expect(doc.modified()).toBe(false);
     expect(settings.get('lastpath.asm')).toBe('hello.asm');
+  });
+
+  it('Save Code suggests the renamed tab title when there is no file', async () => {
+    const doc = workspace.newDocument();
+    doc.rename('loop demo');
+    fs.nextSaveName = null;
+    await files.saveCode(doc);
+    expect(fs.calls).toEqual(['saveAs asm loop demo.asm near=-']);
+  });
+
+  it('Save Code As keeps suggesting the opened file after a rename', async () => {
+    fs.files.set('prog.asm', 'nop');
+    fs.nextOpen = 'prog.asm';
+    const doc = (await files.openCode())!;
+    doc.rename('renamed');
+    fs.calls.length = 0;
+    fs.nextSaveName = null;
+    await files.saveCodeAs(doc);
+    expect(fs.calls).toEqual(['saveAs asm prog.asm near=prog.asm']);
   });
 
   it('Save Code writes back to the remembered file without asking', async () => {
@@ -167,7 +186,7 @@ describe('FileService (spec 02 §13, 09 §2, §4)', () => {
     fs.nextSaveName = null;
     expect(await files.saveCode(doc)).toBe(false);
     expect(doc.modified()).toBe(true);
-    expect(doc.title()).toBe('new document');
+    expect(doc.title()).toBe('new program');
   });
 
   it('an I/O error shows its text in a message and keeps the document modified', async () => {

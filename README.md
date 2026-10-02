@@ -102,7 +102,7 @@ npm run e2e               # Playwright end-to-end tests, including axe and perfo
 `npm run e2e` starts a dev server on port 4300. Set `PW_CHROMIUM_PATH` to use a
 preinstalled Chromium; otherwise run `npx playwright install chromium` once.
 
-The **conformance tests** run 44 assembly programs headlessly and compare the final
+The **conformance tests** run 51 assembly programs headlessly and compare the final
 machine state with outputs recorded from the original interpreter
 ([spec/08-conformance.md](spec/08-conformance.md)). To check the expectations against
 the original Java implementation itself (needs a JDK and git; it clones and compiles
@@ -168,7 +168,7 @@ original. See [LICENSE.md](LICENSE.md).
 Jasmin was created at the Lehrstuhl für Rechnertechnik und Rechnerorganisation,
 Technische Universität München. Initial development by Yang Guo, Jakob Kummerow, Kai
 Orend and Stefanie Schmid; initial documentation and tutorials by André Aichert,
-Mattias Kaiser and Sebastian Ullherr; maintained by Marcel Meyer, with additional
+Matthias Kaiser and Sebastian Ullherr; maintained by Marcel Meyer, with additional
 credits to Johannes Roith and Alexander Ried. The port reuses the original's help
 pages, and its logo for the browser tab icon ([public/NOTICE.txt](public/NOTICE.txt)).
 

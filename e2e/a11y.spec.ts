@@ -101,7 +101,7 @@ test.describe('keyboard-only use', () => {
   test('tab strip: one tab stop, arrows select, Delete closes', async ({ page }) => {
     await openNewDocument(page);
     const tabs = page.getByRole('tablist', { name: 'Open tabs' });
-    const doc = tabs.getByRole('tab', { name: /new document/ });
+    const doc = tabs.getByRole('tab', { name: /new program/ });
     await doc.focus();
     await page.keyboard.press('ArrowLeft');
     await expect(tabs.getByRole('tab', { name: 'Welcome' })).toBeFocused();
