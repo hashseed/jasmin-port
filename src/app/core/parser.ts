@@ -386,7 +386,11 @@ export class Parser {
    * advances the change counter once at the end instead (`advanceCounter = false`).
    */
   run(command: Command, param: Parameters, advanceCounter = false): ParseError | null {
-    const error = command.execute(param);
+    return this.checkResult(command.execute(param), advanceCounter);
+  }
+
+  /** The end of `run`: `error` is what the instruction returned. */
+  checkResult(error: ParseError | null | void, advanceCounter: boolean): ParseError | null {
     if (error) {
       this.dsp.clearAddressOutOfRange();
       return error;
