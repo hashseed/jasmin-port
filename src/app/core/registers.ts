@@ -135,6 +135,19 @@ export class RegisterFile {
   /** `setNum(EIP, ip)` for an integer `ip`. */
   setInstructionPointer(ip: number): void {
     this.values[IP] = ip;
+    this.stampInstructionPointer();
+  }
+
+  /**
+   * Sets EIP without stamping it. The caller stamps it (`stampInstructionPointer`)
+   * before anything can look at the stamps and before the counter moves.
+   */
+  moveInstructionPointer(ip: number): void {
+    this.values[IP] = ip;
+  }
+
+  /** Marks EIP as written now. */
+  stampInstructionPointer(): void {
     this.dirty[IP] = this.stamp;
     this.dirtyMask[IP] = -1;
   }

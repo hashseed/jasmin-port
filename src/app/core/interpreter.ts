@@ -97,27 +97,41 @@ export class Interpreter {
     const registers = dsp.registers;
     // Nothing else runs during a batch, so the program cannot change.
     const lineCount = this.program.lineCount;
+    let outcome = CONTINUE;
+    let executed = false;
     for (let n = 0; n < maxSteps; n++) {
       const line = registers.instructionPointer;
-      if (line < 0 || line >= lineCount) return END;
+      if (line < 0 || line >= lineCount) {
+        outcome = END;
+        break;
+      }
       if (isBreakpoint(line)) {
-        if (line !== this.skipBreakpointAt) return { kind: 'breakpoint', line };
+        if (line !== this.skipBreakpointAt) {
+          outcome = { kind: 'breakpoint', line };
+          break;
+        }
         this.skipBreakpointAt = -1;
       }
-      registers.setInstructionPointer(line + 1);
+      // EIP's change stamp is set once below.
+      registers.moveInstructionPointer(line + 1);
+      executed = true;
       const error = this.executeCached(line);
       if (error) {
-        registers.setInstructionPointer(line);
+        registers.moveInstructionPointer(line);
         dsp.pendingSleepMs = 0;
-        return { kind: 'error', line, error };
+        outcome = { kind: 'error', line, error };
+        break;
       }
       if (dsp.pendingSleepMs > 0) {
-        const ms = dsp.pendingSleepMs;
+        outcome = { kind: 'sleep', ms: dsp.pendingSleepMs };
         dsp.pendingSleepMs = 0;
-        return { kind: 'sleep', ms };
+        break;
       }
     }
-    return CONTINUE;
+    // The change counter does not move during a run (spec 04 §8), so EIP's writes
+    // by this batch all carry the same stamp: set it once.
+    if (executed) registers.stampInstructionPointer();
+    return outcome;
   }
 
   /** Ends a run: advances the change counter once (spec 04 §8) and drops the cache. */
