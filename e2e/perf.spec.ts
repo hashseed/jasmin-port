@@ -6,11 +6,17 @@ const MILLION = ['mov ecx, 500000', 'mov eax, 0', 'l: add eax, 1', 'loop l'].joi
 /** Never ends: a tight loop with no JASMINSLEEP, so only time slicing keeps the tab alive. */
 const FOREVER = ['l: add eax, 1', 'jmp l'].join('\n');
 
+/** Never ends either; Run executes it as compiled code (spec 04 §9.3 port note). */
+const FOREVER_TWO = ['l: add eax, 1', 'add ebx, 2', 'jmp l'].join('\n');
+
 const runButton = (page: Page) => page.getByRole('toolbar').locator('[data-action="runPause"]');
-const eaxField = (page: Page) =>
+const registerField = (page: Page, name: string) =>
   page
     .getByRole('region', { name: 'Registers', exact: true })
-    .getByRole('textbox', { name: 'EAX', exact: true });
+    .getByRole('textbox', { name, exact: true });
+const eaxField = (page: Page) => registerField(page, 'EAX');
+const registerValue = async (page: Page, name: string) =>
+  Number(await registerField(page, name).inputValue());
 
 test.describe('performance (docs/plan.md M9)', () => {
   test('a 1M-instruction loop completes in reasonable time', async ({ page }) => {
@@ -57,6 +63,50 @@ test.describe('performance (docs/plan.md M9)', () => {
     console.log(`pause took ${Date.now() - clicked} ms`);
     const eax = Number(await eaxField(page).inputValue());
     expect(eax).toBeGreaterThan(1000);
+  });
+
+  test('a compiled endless loop pauses with the exact state, and Step continues it', async ({
+    page,
+  }) => {
+    await openNewDocument(page);
+    await setProgram(page, FOREVER_TWO);
+    await runButton(page).click();
+    await expect(runButton(page)).toHaveClass(/running/);
+
+    // The registers follow the run while it is in progress.
+    const first = await registerValue(page, 'EBX');
+    await expect.poll(() => registerValue(page, 'EBX'), { timeout: 2_000 }).toBeGreaterThan(first);
+
+    const clicked = Date.now();
+    await runButton(page).click();
+    await expect(runButton(page)).not.toHaveClass(/running/, { timeout: 2_000 });
+    console.log(`compiled loop: pause took ${Date.now() - clicked} ms`);
+
+    // Paused between two lines: EBX = 2 * EAX, less 2 if the ADD EBX is next (32-bit).
+    const state = async () => ({
+      eip: await registerValue(page, 'EIP'),
+      eax: await registerValue(page, 'EAX'),
+      ebx: await registerValue(page, 'EBX'),
+    });
+    const consistent = ({ eip, eax, ebx }: { eip: number; eax: number; ebx: number }) =>
+      (2 * eax - (eip === 1 ? 2 : 0) - ebx) % 2 ** 32 === 0;
+    let before = await state();
+    expect([0, 1, 2]).toContain(before.eip);
+    expect(before.eax).toBeGreaterThan(1000);
+    expect(consistent(before)).toBe(true);
+
+    // Step continues exactly where Run stopped.
+    for (let k = 0; k < 4; k++) {
+      await page.keyboard.press('F7');
+      const expected = {
+        eip: (before.eip + 1) % 3,
+        eax: before.eip === 0 ? (before.eax + 1) % 2 ** 32 : before.eax,
+        ebx: before.eip === 1 ? (before.ebx + 2) % 2 ** 32 : before.ebx,
+      };
+      await expect.poll(state).toEqual(expected);
+      before = expected;
+      expect(consistent(before)).toBe(true);
+    }
   });
 
   test('1 MB of memory scrolls with a small DOM', async ({ page }) => {
