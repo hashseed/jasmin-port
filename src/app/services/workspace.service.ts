@@ -138,8 +138,8 @@ export class WorkspaceService {
     inject(DestroyRef).onDestroy(() => setRegistered(false));
   }
 
-  /** File > New: a document titled `new document` (spec 09 §2). */
-  newDocument(title = 'new document', text = ''): DocumentStore {
+  /** File > New: a document titled `new program` (spec 09 §2). */
+  newDocument(title = 'new program', text = ''): DocumentStore {
     const session = this.createSession({
       memorySize: this.settings.get('memory'),
       offset: this.settings.get('offset'),

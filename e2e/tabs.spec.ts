@@ -12,10 +12,10 @@ test.describe('renaming document tabs (port addition)', () => {
       delete w['showSaveFilePicker'];
     });
     await openNewDocument(page);
-    await tabs(page).getByRole('tab', { name: 'new document' }).dblclick();
+    await tabs(page).getByRole('tab', { name: 'new program' }).dblclick();
     const field = renameField(page);
     await expect(field).toBeFocused();
-    await expect(field).toHaveValue('new document');
+    await expect(field).toHaveValue('new program');
     // The whole name is selected, so typing replaces it.
     await page.keyboard.type('  loop demo ');
     await page.keyboard.press('Enter');
@@ -31,7 +31,7 @@ test.describe('renaming document tabs (port addition)', () => {
 
   test('Escape and an empty name keep the old title; blur commits', async ({ page }) => {
     await openNewDocument(page);
-    const doc = tabs(page).getByRole('tab', { name: 'new document' });
+    const doc = tabs(page).getByRole('tab', { name: 'new program' });
     await doc.dblclick();
     await page.keyboard.type('discarded');
     await page.keyboard.press('Escape');
@@ -42,7 +42,7 @@ test.describe('renaming document tabs (port addition)', () => {
     await renameField(page).fill('   ');
     await page.keyboard.press('Enter');
     await expect(doc).toBeVisible();
-    await expect(page).toHaveTitle('Jasmin - new document');
+    await expect(page).toHaveTitle('Jasmin - new program');
 
     await doc.dblclick();
     await renameField(page).fill('by blur');
@@ -65,7 +65,7 @@ test.describe('renaming document tabs (port addition)', () => {
   test('F2 on a focused document tab starts renaming', async ({ page }) => {
     await openNewDocument(page);
     await setProgram(page, 'nop');
-    await tabs(page).getByRole('tab', { name: 'new document' }).focus();
+    await tabs(page).getByRole('tab', { name: 'new program' }).focus();
     await page.keyboard.press('F2');
     await expect(renameField(page)).toBeFocused();
     await page.keyboard.type('via keyboard');

@@ -61,9 +61,9 @@ test.describe('files without the File System Access API (spec 02 §13 fallback)'
     const download = page.waitForEvent('download');
     await page.keyboard.press('Control+s');
     const file = await download;
-    expect(file.suggestedFilename()).toBe('new document.asm');
+    expect(file.suggestedFilename()).toBe('new program.asm');
     expect(await downloaded(file)).toBe('mov eax, 1');
-    await expect(tab(page, 'new document.asm')).toBeVisible();
+    await expect(tab(page, 'new program.asm')).toBeVisible();
     await expect(page.locator('.tab .modified')).toHaveCount(0);
   });
 
@@ -76,7 +76,7 @@ test.describe('files without the File System Access API (spec 02 §13 fallback)'
     const download = page.waitForEvent('download');
     await fileMenu(page, 'Save Memory');
     const file = await download;
-    expect(file.suggestedFilename()).toBe('new document.mem');
+    expect(file.suggestedFilename()).toBe('new program.mem');
     const memory = await downloaded(file);
     expect(JSON.parse(memory)).toMatchObject({ format: 'jasmin-mem', version: 1 });
 
@@ -196,9 +196,9 @@ test.describe('files with the File System Access API (remembered handles)', () =
     await fileMenu(page, 'Save Memory');
     await expect
       .poll(() => page.evaluate(() => (window as unknown as Record<string, unknown>)['__calls']))
-      .toEqual(['save jasmin-mem new document.mem']);
+      .toEqual(['save jasmin-mem new program.mem']);
     const saved = await page.evaluate(
-      () => (window as unknown as { __files: Record<string, string> }).__files['new document.mem'],
+      () => (window as unknown as { __files: Record<string, string> }).__files['new program.mem'],
     );
     expect(JSON.parse(saved)).toMatchObject({ format: 'jasmin-mem' });
   });

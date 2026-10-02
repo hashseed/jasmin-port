@@ -53,22 +53,22 @@ test('menus show their shortcuts', async ({ page }) => {
   ]);
 });
 
-test('New creates "new document" tabs and sets the window title', async ({ page }) => {
+test('New creates "new program" tabs and sets the window title', async ({ page }) => {
   await page.goto('/');
   await page.getByRole('menuitem', { name: 'File' }).click();
   await page.getByRole('menuitem', { name: 'New' }).click();
-  await expect(page.getByRole('tab', { name: 'new document' })).toHaveAttribute(
+  await expect(page.getByRole('tab', { name: 'new program' })).toHaveAttribute(
     'aria-selected',
     'true',
   );
-  await expect(page).toHaveTitle('Jasmin - new document');
+  await expect(page).toHaveTitle('Jasmin - new program');
 
   await page.keyboard.press('Alt+n');
-  await expect(page.getByRole('tab', { name: 'new document' })).toHaveCount(2);
+  await expect(page.getByRole('tab', { name: 'new program' })).toHaveCount(2);
 
   // Selecting a help tab keeps the title (spec 02 §1).
   await page.getByRole('tab', { name: 'Welcome' }).click();
-  await expect(page).toHaveTitle('Jasmin - new document');
+  await expect(page).toHaveTitle('Jasmin - new program');
 });
 
 test('right-clicking the tab strip offers Close Tab for the selected tab', async ({ page }) => {
