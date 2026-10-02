@@ -4,7 +4,7 @@
  * shift-heavy CRC-32, since no sample shifts) headlessly, checks every result and
  * prints the median run time of each.
  *
- *   node bench/samples.mjs [--runs R] [--runner bench.js ...] [--list] [case ...]
+ *   node bench/samples.mjs [--runs R] [--runner bench.js ...] [--list] [--emit DIR] [case ...]
  *
  * Each case starts from the sample's own text and changes only its input (or, for
  * the device samples, replaces JASMINSLEEP by a counter so the run ends), so the
@@ -13,12 +13,15 @@
  * timed). The final registers and memory are checked against a JavaScript
  * computation of the same result.
  *
+ * --emit writes the programs to DIR as <case>.asm (with the memory size in the first
+ * line) instead of running them.
+ *
  * Without --runner the script bundles src/headless/bench.ts to dist/headless/bench.js
  * first. With several --runner bundles (e.g. built from different commits) the runs
  * alternate between them, case by case, and each gets its own median column.
  */
 import { execFileSync, spawnSync } from 'node:child_process';
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -31,26 +34,6 @@ function edit(text, from, to) {
   if (!text.includes(from)) throw new Error(`sample changed: ${JSON.stringify(from)} not found`);
   return text.replace(from, to);
 }
-
-/** Deterministic 32-bit values (xorshift32). */
-function randomValues(count, seed, limit) {
-  let x = seed;
-  const values = [];
-  for (let i = 0; i < count; i++) {
-    x ^= x << 13;
-    x ^= x >>> 17;
-    x ^= x << 5;
-    values.push((x >>> 0) % limit);
-  }
-  return values;
-}
-
-const ddLines = (values) => {
-  const lines = [];
-  for (let i = 0; i < values.length; i += 16)
-    lines.push(`dd ${values.slice(i, i + 16).join(', ')}`);
-  return lines.join('\n');
-};
 
 const dword = (state, address) =>
   (state.memory[address] |
@@ -73,14 +56,38 @@ function isPrime(n) {
   return true;
 }
 
+/**
+ * A sorting sample on `count` dwords. Its `dd` data becomes `resd count`, filled at
+ * the start of the run by a linear congruential generator (Run parses each line when
+ * it first executes it, so thousands of `dd` lines would time the parser).
+ */
 function sortCase(name, count, seed) {
-  const values = randomValues(count, seed, 1 << 30);
+  const values = [];
+  let x = seed;
+  for (let i = 0; i < count; i++) {
+    x = (Math.imul(x, 1103515245) + 12345) | 0;
+    values.push(x >>> 2);
+  }
+  const fill = `mov eax, ${seed}
+mov ecx, 0
+fill:
+imul eax, eax, 1103515245
+add eax, 12345
+mov edx, eax
+shr edx, 2
+mov [ecx*4+data], edx
+inc ecx
+cmp ecx, ${count}
+jl fill
+mov esi, data`;
+  const source = edit(
+    sample(name).replace(/^data:\n(dd .*\n|\n)+data_end:/m, `data: resd ${count}\ndata_end:`),
+    'mov esi, data',
+    fill,
+  );
   return {
     memory: count * 4 * 6 + 65536,
-    source: sample(name).replace(
-      /^data:\n(dd .*\n|\n)+data_end:/m,
-      `data:\n${ddLines(values)}\ndata_end:`,
-    ),
+    source,
     check: (state) =>
       expectEqual(
         'sorted data',
@@ -142,8 +149,8 @@ const CASES = {
     build: () => sortCase('mergesort', 120000, 7),
   },
   quicksort: {
-    about: 'IDIV, IMUL, memory ADD/CMP, PUSH/POP of memory: 100,000 dwords',
-    build: () => sortCase('quicksort', 100000, 11),
+    about: 'IDIV, IMUL, memory ADD/CMP, PUSH/POP of memory: 150,000 dwords',
+    build: () => sortCase('quicksort', 150000, 11),
   },
   life: {
     about: 'ADC, CALL/RET, PUSH/POP, BT/BTS/BTR: 1,000 generations',
@@ -329,8 +336,10 @@ function main(args) {
   let runs = 5;
   const runners = [];
   const names = [];
+  let emit = null;
   for (let i = 0; i < args.length; i++) {
     if (args[i] === '--runs') runs = Number(args[++i]);
+    else if (args[i] === '--emit') emit = resolve(args[++i]);
     else if (args[i] === '--runner') runners.push(resolve(args[++i]));
     else if (args[i] === '--list') {
       for (const [name, c] of Object.entries(CASES)) console.log(`${name.padEnd(10)} ${c.about}`);
@@ -340,9 +349,17 @@ function main(args) {
   const unknown = names.filter((n) => !(n in CASES));
   if (unknown.length || !(runs >= 1)) {
     process.stderr.write(
-      `usage: node bench/samples.mjs [--runs R] [--runner bench.js ...] [--list] [${Object.keys(CASES).join('|')} ...]\n`,
+      `usage: node bench/samples.mjs [--runs R] [--runner bench.js ...] [--list] [--emit DIR] [${Object.keys(CASES).join('|')} ...]\n`,
     );
     return 2;
+  }
+  if (emit) {
+    mkdirSync(emit, { recursive: true });
+    for (const name of names.length ? names : Object.keys(CASES)) {
+      const { source, memory } = CASES[name].build();
+      writeFileSync(join(emit, `${name}.asm`), `; memory ${memory}\n${source}`);
+    }
+    return 0;
   }
   if (runners.length === 0) {
     execFileSync(

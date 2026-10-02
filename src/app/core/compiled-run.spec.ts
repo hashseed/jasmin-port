@@ -236,11 +236,12 @@ describe('compiled Run (spec 04 §9.3 port note)', () => {
     const source =
       'mov eax, [ebx+4]\nadd eax, 1\njne 0\npush eax\nimul eax, 3\npop bx\nret\nshl eax, 1\n' +
       'sar byte [esi], cl\nrcl ax, 1\nmul dword [ebx]\nidiv cx\nmovzx eax, byte [esi]\n' +
-      'movsx edx, cx\nxchg eax, [esi]\nsetg al\ncmovl ecx, [esi]\ncdq\nnop\n' +
-      'bswap eax\nbt eax, 3\nimul eax, 4294967295\nxadd eax, ebx';
+      'movsx edx, cx\nxchg eax, [esi]\nsetg al\ncmovl ecx, [esi]\ncdq\nnop\nbt eax, 3\n' +
+      'bts [esi+4], ecx\npush dword [esi]\npop word [ebx+2]\n' +
+      'bswap eax\nbsf eax, ebx\nimul eax, 4294967295\nxadd eax, ebx';
     const m = machine(source, true);
     const specialized = m.program.results.map((r) => isSpecialized(m.dsp, r));
-    expect(specialized).toEqual([...Array<boolean>(19).fill(true), false, false, false, false]);
+    expect(specialized).toEqual([...Array<boolean>(23).fill(true), false, false, false, false]);
   });
 
   it('never executes more lines than the budget, also in a tight loop', () => {
@@ -369,6 +370,96 @@ describe('compiled Run (spec 04 §9.3 port note)', () => {
     expect(compiled / (compiled + interpreted)).toBeGreaterThan(0.5);
   });
 
+  it('accesses memory inline for PUSH, POP and bit tests, notifying watched bytes', () => {
+    const source = `
+  mov esp, 400
+  mov esi, 100
+  mov ecx, 40
+again:
+  mov [esi], ecx
+  push dword [esi]
+  push word [esi+2]
+  pop word [esi+8]
+  pop dword [esi+12]
+  bts [esi+16], ecx
+  btr word [esi+20], cx
+  btc dword [esi], 3
+  bt dword [esi+12], ecx
+  adc ebx, 0
+  add esi, 4
+  loop again`;
+    const ranges = [
+      { start: 116, end: 120 },
+      { start: 140, end: 141 },
+      { start: 393, end: 398 },
+    ];
+    const inRanges = (write: string) => {
+      const address = Number(write.split('=')[0]);
+      return ranges.some((r) => address >= r.start && address < r.end);
+    };
+    const all = compare(source, [1000], new Set(), 100);
+    for (const budgets of [[1], [3, 7], [1000]]) {
+      const { fast, outcomes } = compare(source, budgets, new Set(), 2000, ranges);
+      expect(outcomes.at(-1)).toEqual({ kind: 'end' });
+      expect(fast.writes).toEqual(all.fast.writes.filter(inRanges));
+      expect(fast.writes.length).toBeGreaterThan(20);
+    }
+    const m = machine(source, true, 4096, 0, ranges);
+    for (const line of [6, 7, 8, 9, 10, 11, 12, 13]) {
+      expect(isSpecialized(m.dsp, m.program.results[line])).toBe(true);
+    }
+  });
+
+  it('follows memory listeners that move their ranges or are added during a run', () => {
+    // A device that moves its bytes when written (as a reconfigured device does), and
+    // one attached between two batches.
+    const source = `
+  mov esi, 100
+  mov ecx, 1000
+again:
+  mov eax, ecx
+  and eax, 63
+  mov [esi+eax*4], ecx
+  push dword [esi+eax*4]
+  pop dword [esi+eax*2+400]
+  bts word [esi+eax], cx
+  loop again`;
+    const run = (compiled: boolean) => {
+      const m = machine(source, compiled, 4096, 0, [{ start: 0, end: 0 }]);
+      const seen: string[] = [];
+      let start = 100;
+      const mover = (address: number, value: number) => {
+        seen.push(`mover ${address}=${value}`);
+        start = start >= 300 ? 100 : start + 52;
+        m.dsp.memory.watch(mover, [{ start, end: start + 40 }]);
+      };
+      m.dsp.memory.addListener(mover, [{ start, end: start + 40 }]);
+      const isBreakpoint = () => false;
+      m.interpreter.beginRun(isBreakpoint);
+      const outcomes = [m.interpreter.runSteps(1000, isBreakpoint)];
+      m.dsp.memory.addListener(
+        (address, value) => seen.push(`late ${address}=${value}`),
+        [
+          { start: 300, end: 310 },
+          { start: 700, end: 704 },
+        ],
+      );
+      for (let k = 0; k < 10 && outcomes.at(-1)!.kind === 'continue'; k++) {
+        outcomes.push(m.interpreter.runSteps(997, isBreakpoint));
+      }
+      m.interpreter.endRun();
+      return { seen, outcomes, state: observable(m), stats: m.interpreter.runStats };
+    };
+    const [plain, fast] = [run(false), run(true)];
+    expect(fast.outcomes).toEqual(plain.outcomes);
+    expect(fast.outcomes.at(-1)).toEqual({ kind: 'end' });
+    expect(fast.seen).toEqual(plain.seen);
+    expect(fast.seen.filter((s) => s.startsWith('mover')).length).toBeGreaterThan(10);
+    expect(fast.seen.filter((s) => s.startsWith('late')).length).toBeGreaterThan(10);
+    expect(fast.state).toBe(plain.state);
+    expect(fast.stats.compiled).toBeGreaterThan(2000);
+  });
+
   it('keeps the general registers in locals and writes them back once per exit', () => {
     const m = machine(BUBBLESORT, true);
     const lines = m.program.results;
@@ -376,7 +467,9 @@ describe('compiled Run (spec 04 §9.3 port note)', () => {
     // No register value or stamp is written inline, only on write-back (with `m`).
     expect(source).not.toMatch(/V\[[0-7]\] = (?!r)/);
     expect(source).not.toMatch(/RD\[[0-7]\] = R\.stamp; RM\[[0-7]\] = -?\d/);
-    expect(source).toContain('if (m0 !== 0) { V[0] = r0; RD[0] = R.stamp; RM[0] = m0; m0 = 0; }');
+    expect(source).toContain('if (m0) { V[0] = r0; RD[0] = R.stamp; RM[0] = m0; }');
+    // One exit: every exit leaves the loop and writes back there.
+    expect(source.match(/return /g)).toHaveLength(2);
     expect(source).toContain('r1 = V[1] | 0;');
   });
 
@@ -896,6 +989,10 @@ function randomProgram(random: (n: number) => number, pick: <T>(items: readonly 
           `set${pick(CONDITIONS)} ${operand(1, true)}`,
           `cmov${pick(CONDITIONS)} ${register(wide)}, ${operand(wide, true)}`,
           pick(['cbw', 'cwde', 'cwd', 'cdq', 'nop']),
+          `${pick(['bt', 'bts', 'btr', 'btc'])} ${operand(wide, true)}, ${random(2) ? register(wide) : random(40)}`,
+          `push ${memory(wide)}`,
+          `pop ${memory(wide)}`,
+          `push ${memory(4)}\npop ${random(2) ? memory(4) : register(4)}`,
         ]),
       );
     } else {
