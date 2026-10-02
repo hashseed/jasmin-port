@@ -10,6 +10,8 @@ import { Jmp } from './commands/jmp';
 import { Lea } from './commands/lea';
 import { Loop } from './commands/loop';
 import { Mov } from './commands/mov';
+import { Pop } from './commands/pop';
+import { Push } from './commands/push';
 import { Ret } from './commands/ret';
 import { DataSpace } from './data-space';
 import { EVEN_PARITY, Flag } from './flags';
@@ -28,8 +30,9 @@ import { RUNTIME_STACK_ERROR } from './parser';
  * The compiled code has the observable behavior of the run loop executing the same
  * lines one by one:
  * - common instructions (MOV, ADD/ADC/SUB/SBB/CMP, INC/DEC/NEG/NOT,
- *   AND/OR/XOR/TEST, LEA, Jcc/JMP, LOOPcc) run as specialized code that does what
- *   their `execute` does on numbers, with the operands resolved when compiling;
+ *   AND/OR/XOR/TEST, LEA, Jcc/JMP, LOOPcc, PUSH, POP, CALL, RET) run as specialized
+ *   code that does what their `execute` does on numbers, with the operands resolved
+ *   when compiling;
  *   effective addresses are still computed on every execution (07 Q-I-18);
  * - every other instruction calls its command's `execute` (one call site per line,
  *   so no shared dispatch) and checks the result like `Parser.checkResult`;
@@ -382,6 +385,10 @@ class RegionCompiler {
     if (!command || !p || p.signed || !p.numeric) return null;
     if (command instanceof Jmp) return this.jump(line, p, previous);
     if (command instanceof Loop) return this.loop(line, p, previous);
+    if (command instanceof Push) return this.push(line, command, p);
+    if (command instanceof Pop) return this.pop(line, command, p);
+    if (command instanceof Call) return this.call(line, command, p);
+    if (command instanceof Ret) return this.ret(line, command, p);
     const ops: Operand[] = [];
     for (let k = 0; k < p.numArguments; k++) {
       const op = this.operand(p, k);
@@ -446,14 +453,7 @@ class RegionCompiler {
     const size = op.arg.size;
     const offset = this.dsp.offset;
     const limit = this.dsp.memoryEnd - size;
-    let read: string;
-    if (size === 4) {
-      read = `(B[i] | (B[i + 1] << 8) | (B[i + 2] << 16) | (B[i + 3] << 24)) >>> 0`;
-    } else if (size === 2) {
-      read = `B[i] | (B[i + 1] << 8)`;
-    } else {
-      read = `B[i]`;
-    }
+    const read = readBytes(size);
     return (
       `if (x >= ${offset} && x <= ${limit} && d.memInfo.size === 0) { i = x - ${offset}; ${name} = ${read}; }\n` +
       `else ${name} = d.getUpdateNum(${op.address}, false);\n`
@@ -462,30 +462,124 @@ class RegionCompiler {
 
   /** `putNum(value, op, null)` for a register or memory destination. */
   private store(op: Operand, value: string): string {
-    if (op.kind === 'reg') {
-      // `RegisterFile.setNum` and dropping a label marker (`DataSpace.setMemInfo`).
-      const a = op.arg;
-      const k = a.address;
-      const write =
-        a.mask === 0xffffffff && a.rshift === 0
-          ? `V[${k}] = ${value};\n`
-          : `V[${k}] = (V[${k}] & ${~a.mask}) | ((${value} << ${a.rshift}) & ${a.mask});\n`;
-      return (
-        write +
-        `RD[${k}] = R.stamp; RM[${k}] = ${a.mask | 0};\n` +
-        `if (d.regInfo.size !== 0) d.regInfo.delete(${k});\n`
-      );
-    }
+    if (op.kind === 'reg') return this.storeRegister(op.arg, value);
     // `Memory.setLittleEndian` without listeners, label markers or range errors.
     const size = op.arg.size;
     const offset = this.dsp.offset;
     const limit = this.dsp.memoryEnd - size;
-    let bytes = `i = x - ${offset}; w = ${value};\nB[i] = w; MD[i] = M.stamp;\n`;
-    for (let k = 1; k < size; k++) bytes += `w >>>= 8; B[i + ${k}] = w; MD[i + ${k}] = M.stamp;\n`;
     return (
-      `if (x >= ${offset} && x <= ${limit} && d.memInfo.size === 0 && M.listeners.size === 0) {\n${bytes}}\n` +
-      `else d.putNum(${value}, ${op.address}, null);\n`
+      `if (x >= ${offset} && x <= ${limit} && d.memInfo.size === 0 && M.listeners.size === 0) {\n` +
+      this.writeBytes(size, value) +
+      `}\nelse d.putNum(${value}, ${op.address}, null);\n`
     );
+  }
+
+  /** `putNum(value, a, null)` for a register: `RegisterFile.setNum`, dropping a label marker. */
+  private storeRegister(a: Address, value: string): string {
+    const k = a.address;
+    const write =
+      a.mask === 0xffffffff && a.rshift === 0
+        ? `V[${k}] = ${value};\n`
+        : `V[${k}] = (V[${k}] & ${~a.mask}) | ((${value} << ${a.rshift}) & ${a.mask});\n`;
+    return (
+      write +
+      `RD[${k}] = R.stamp; RM[${k}] = ${a.mask | 0};\n` +
+      `if (d.regInfo.size !== 0) d.regInfo.delete(${k});\n`
+    );
+  }
+
+  /** `Memory.setLittleEndian(x, value, size)` without listeners (x checked by the caller). */
+  private writeBytes(size: number, value: string): string {
+    let code = `i = x - ${this.dsp.offset}; w = ${value};\nB[i] = w; MD[i] = M.stamp;\n`;
+    for (let k = 1; k < size; k++) code += `w >>>= 8; B[i + ${k}] = w; MD[i + ${k}] = M.stamp;\n`;
+    return code;
+  }
+
+  // ---- stack (`Parameters.push` and `pop`) ----
+  //
+  // Inline when no label markers and no memory listeners exist (then the markers
+  // that `push` and `pop` copy are all null); otherwise the line calls `execute`.
+
+  /** `Parameters.push` of the local `a` (`size` bytes). */
+  private pushValue(size: number): string {
+    const offset = this.dsp.offset;
+    return (
+      `c = V[6] - ${size};\n` +
+      this.storeRegister(this.dsp.ESP, 'c') +
+      `x = V[6] | 0;\n` +
+      `if (x >= ${offset} && x <= ${this.dsp.memoryEnd - size}) {\n${this.writeBytes(size, 'a')}}\n` +
+      `else d.setAddressOutOfRange();\n`
+    );
+  }
+
+  /** `Parameters.pop` into the register `dest` (`size` bytes). */
+  private popInto(dest: Address, size: number): string {
+    const offset = this.dsp.offset;
+    const end = this.dsp.memoryEnd;
+    return (
+      `c = V[6] + ${size};\n` +
+      `if (c > ${end}) d.setAddressOutOfRange();\n` +
+      `else {\n` +
+      `x = V[6] | 0;\n` +
+      `if (x >= ${offset} && x <= ${end - size}) { i = x - ${offset}; a = ${readBytes(size)}; }\n` +
+      `else { d.setAddressOutOfRange(); a = 0; }\n` +
+      this.storeRegister(dest, 'a') +
+      this.storeRegister(this.dsp.ESP, 'c') +
+      `}\n`
+    );
+  }
+
+  /** Fast stack code, else the command's `execute`; then the range check. */
+  private stack(line: number, command: Command, p: Parameters, fast: string): string {
+    return (
+      `if (${STACK_FAST}) {\n${fast}} else ${this.constant(command)}.execute(${this.constant(p)});\n` +
+      this.rangeCheck(line)
+    );
+  }
+
+  /** PUSH of a register or a number (`Push.execute`). */
+  private push(line: number, command: Command, p: Parameters): LineCode | null {
+    const op = this.operand(p, 0);
+    if (!op || op.kind === 'mem' || p.numArguments !== 1 || (p.size !== 2 && p.size !== 4)) {
+      return null;
+    }
+    // `execute` sets the operand's size to the operation size: keep to registers of that size.
+    if (op.kind === 'reg' && op.arg.size !== p.size) return null;
+    const fast = this.load('a', op) + this.pushValue(p.size);
+    return { code: this.stack(line, command, p, fast), jumps: false };
+  }
+
+  /** POP into a register (`Pop.execute`). */
+  private pop(line: number, command: Command, p: Parameters): LineCode | null {
+    const op = this.operand(p, 0);
+    if (!op || op.kind !== 'reg' || p.numArguments !== 1) return null;
+    const size = op.arg.size;
+    if (size !== 2 && size !== 4) return null;
+    return { code: this.stack(line, command, p, this.popInto(op.arg, size)), jumps: false };
+  }
+
+  /** CALL of a static line (`Call.execute`): push EIP (the next line), then jump. */
+  private call(line: number, command: Command, p: Parameters): LineCode | null {
+    const target = this.staticTarget(p);
+    if (target === null) return null;
+    const fast = `a = V[8];\n` + this.pushValue(4) + `d.setInstructionPointer(${target});\n`;
+    const code =
+      `V[8] = ${line + 1};\n` +
+      this.stack(line, command, p, fast) +
+      `n += ${line} - s + 1;\n` +
+      this.goto(target);
+    return { code, jumps: true };
+  }
+
+  /** RET (`Ret.execute`): pop EIP, then continue there. */
+  private ret(line: number, command: Command, p: Parameters): LineCode | null {
+    if (p.numArguments !== 0) return null;
+    const code =
+      `V[8] = ${line + 1};\n` +
+      this.stack(line, command, p, this.popInto(this.dsp.EIP, 4)) +
+      `n += ${line} - s + 1;\n` +
+      this.gotoEIP();
+    return { code, jumps: true };
   }
 
   /** `DataSpace.setFlagsLazy` inline. */
@@ -645,7 +739,7 @@ class RegionCompiler {
     if ('read' in target) code += `t = ${target.read};\n`;
     // Java long arithmetic: ECX = 0 gives -1 (stored as 0xFFFFFFFF), which jumps.
     code += `c = ${registerRead(ecx)} - 1;\n`;
-    code += this.store({ kind: 'reg', arg: ecx, value: 0, address: '', ea: '' }, 'c');
+    code += this.storeRegister(ecx, 'c');
     const test = this.conditionTest(line, condition, previous);
     code += `if (c !== 0${test === 'true' ? '' : ` && ${test}`}) {\n${this.taken(target)}}\n`;
     code += this.fallThrough(line);
@@ -764,6 +858,16 @@ function conditionExpression(condition: number, flag: (flag: number) => string):
     default:
       return 'false';
   }
+}
+
+/** Stack code is inline only without label markers and memory listeners. */
+const STACK_FAST = 'd.memInfo.size === 0 && d.regInfo.size === 0 && M.listeners.size === 0';
+
+/** Unsigned little-endian read of `size` (1, 2 or 4) bytes at `B[i]`. */
+function readBytes(size: number): string {
+  if (size === 4) return `(B[i] | (B[i + 1] << 8) | (B[i + 2] << 16) | (B[i + 3] << 24)) >>> 0`;
+  if (size === 2) return `B[i] | (B[i + 1] << 8)`;
+  return `B[i]`;
 }
 
 /** `RegisterFile.get(a)` as an expression on the register values `V`. */

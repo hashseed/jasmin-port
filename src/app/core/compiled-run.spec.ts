@@ -163,9 +163,11 @@ describe('compiled Run (spec 04 §9.3 port note)', () => {
   });
 
   it('specializes the common instructions', () => {
-    const m = machine('mov eax, [ebx+4]\nadd eax, 1\njne 0\npush eax\nimul eax, 3', true);
+    const source =
+      'mov eax, [ebx+4]\nadd eax, 1\njne 0\npush eax\nimul eax, 3\npop bx\nret\nshl eax, 1';
+    const m = machine(source, true);
     const specialized = m.program.results.map((r) => isSpecialized(m.dsp, r));
-    expect(specialized).toEqual([true, true, true, false, false]);
+    expect(specialized).toEqual([true, true, true, true, false, true, true, false]);
   });
 
   it('never executes more lines than the budget, also in a tight loop', () => {
