@@ -74,5 +74,5 @@ These are defaults; the owner can flip any of them.
 | Q-UI-2 | Breakpoints are tied to gutter row indices; inserting or deleting lines leaves them on the old index. | **FIX**: breakpoints move with their line; a deleted line drops its breakpoint. |
 | Q-UI-3 | Register expand button reads `>` collapsed, `>` after expanding, `^` after collapsing. | **FIX**: `▸` / `▾`. |
 | Q-UI-4 | Help *Forward* removes the wrong history index (can throw). | **FIX**: standard back/forward stacks. |
-| Q-UI-5 | No unsaved-changes prompts on close or exit. | **FIX** minimally: browser `beforeunload` prompt only. |
+| Q-UI-5 | No unsaved-changes prompts on close or exit. | **FIX**: browser `beforeunload` prompt while a document is modified; and (owner's request, 2026-10-02) closing a modified document's tab (close button, Delete, Close Document, Close Tab, Exit) first asks `Save changes to <title>?` with `Save`, `Don't Save` and `Cancel` (02 §1). |
 | Q-UI-6 | The Configuration page lists all system fonts (slow). | Port offers a fixed font list (02 §12.2). |
