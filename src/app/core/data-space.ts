@@ -458,6 +458,12 @@ export class DataSpace {
     if (a.type & Op.FPUREG) this.fpu.putBits(a, BigInt(value));
   }
 
+  /** `putNum(value, a, null)` for a register `a` (Run's compiled code). */
+  putRegisterNum(value: number, a: Address): void {
+    this.registers.setNum(a, value);
+    if (this.regInfo.size !== 0) this.memInfoDelete(a);
+  }
+
   private setMemInfo(a: Address, info: MemCellInfo | null): void {
     if (info !== null) this.memInfoPut(a, info);
     else if (a.type & Op.REG ? this.regInfo.size !== 0 : this.memInfo.size !== 0) {

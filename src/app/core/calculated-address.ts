@@ -20,6 +20,14 @@ const pBaseIndex = exact(`${REG}[+-]${REG}`);
 const pBaseIndexScalePlusDisplacement = exact(`${REG}\\+${REG}\\*\\d+\\+\\d+`);
 const pBaseIndexScaleMinusDisplacement = exact(`${REG}\\+${REG}\\*\\d+-\\d+`);
 
+/** The parts of an effective address; `index` is multiplied by `scale`. */
+export interface AddressParts {
+  readonly base: Address | null;
+  readonly index: Address | null;
+  readonly scale: number;
+  readonly displacement: number;
+}
+
 const escapeRegExp = (text: string) => text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 
 /**
@@ -51,6 +59,16 @@ export class CalculatedAddress {
     if (ea + size > this.dsp.memoryEnd) return 'Memory address out of range';
     if (ea < this.dsp.offset) return 'Memory address out of range';
     return null;
+  }
+
+  /** The parsed parts `base + index*scale + displacement`, for Run's compiled code. */
+  get parts(): AddressParts {
+    return {
+      base: this.base,
+      index: this.index,
+      scale: this.scale,
+      displacement: this.displacement,
+    };
   }
 
   /** With `executeNow` false, register-based addresses are assumed to be in range. */
