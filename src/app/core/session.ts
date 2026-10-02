@@ -96,6 +96,7 @@ export class MachineSession {
     const moved = remapLines(oldLines, this.program.text.split('\n'), this.breakpointLines);
     this.breakpointLines.clear();
     for (const line of moved) this.breakpointLines.add(line);
+    this.interpreter.breakpointsChanged();
   }
 
   get breakpoints(): ReadonlySet<number> {
@@ -109,6 +110,8 @@ export class MachineSession {
   toggleBreakpoint(line: number): void {
     if (line < 0 || line >= this.program.lineCount) return;
     if (!this.breakpointLines.delete(line)) this.breakpointLines.add(line);
+    // A run in progress must stop at the new breakpoint (compiled code knows the old ones).
+    this.interpreter.breakpointsChanged();
   }
 
   // ---- execution ----
