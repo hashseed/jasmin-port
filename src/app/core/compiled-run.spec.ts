@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { isSpecialized } from './compiled-run';
 import { DataSpace } from './data-space';
 import { Interpreter, RunOutcome } from './interpreter';
+import { MemoryRange } from './memory';
 import { Program } from './program';
 import { serializeSnapshot, takeSnapshot } from './snapshot';
 
@@ -12,14 +13,21 @@ interface Machine {
   writes: string[];
 }
 
-function machine(source: string, compiled: boolean, memory = 4096, offset = 0): Machine {
+/** A machine whose memory listener records the writes inside `ranges` (all if omitted). */
+function machine(
+  source: string,
+  compiled: boolean,
+  memory = 4096,
+  offset = 0,
+  ranges?: readonly MemoryRange[],
+): Machine {
   const dsp = new DataSpace(memory, offset);
   const program = new Program(dsp);
   program.setText(source);
   const interpreter = new Interpreter(dsp, program);
   interpreter.useCompiledCode = compiled;
   const writes: string[] = [];
-  dsp.memory.addListener((address, value) => writes.push(`${address}=${value}`));
+  dsp.memory.addListener((address, value) => writes.push(`${address}=${value}`), ranges);
   return { dsp, program, interpreter, writes };
 }
 
@@ -55,9 +63,10 @@ function compare(
   budgets: readonly number[],
   breakpoints: ReadonlySet<number> = new Set(),
   maxBatches = 200,
+  ranges?: readonly MemoryRange[],
 ) {
-  const plain = machine(source, false);
-  const fast = machine(source, true);
+  const plain = machine(source, false, 4096, 0, ranges);
+  const fast = machine(source, true, 4096, 0, ranges);
   const isBreakpoint = (line: number) => breakpoints.has(line);
   const outcomes: RunOutcome[] = [];
   plain.interpreter.beginRun(isBreakpoint);
@@ -141,6 +150,25 @@ again:
 sub:
   sub edx, 1
   cmovl eax, edx
+  ret
+done:
+  nop`;
+
+/** Pushes, calls and stores around a stack at 64, without label markers. */
+const STACK = `
+  mov esp, 64
+  mov ecx, 30
+again:
+  push ecx
+  push cx
+  pop dx
+  call sub
+  pop eax
+  mov [ecx*2], ax
+  loop again
+  jmp done
+sub:
+  add ebx, eax
   ret
 done:
   nop`;
@@ -275,5 +303,34 @@ describe('compiled Run (spec 04 §9.3 port note)', () => {
     }
     expect(observable(fast)).toBe(observable(plain));
     expect(fast.dsp.getUnsignedMemory(5036, 4)).toBe(3n);
+  });
+
+  it('runs fast outside watched ranges and notifies writes inside them', () => {
+    const ranges = [
+      { start: 10, end: 13 },
+      { start: 56, end: 58 },
+    ];
+    const inRanges = (write: string) => {
+      const address = Number(write.split('=')[0]);
+      return ranges.some((r) => address >= r.start && address < r.end);
+    };
+    // Every write and stamp as with a listener for all addresses, only the inner ones reported.
+    const all = compare(BUBBLESORT, [1000], new Set(), 10000);
+    for (const budgets of [[1], [3, 7], [1000]]) {
+      const { fast, outcomes } = compare(BUBBLESORT, budgets, new Set(), 10000, ranges);
+      expect(outcomes.at(-1)?.kind).toBe('end');
+      expect(fast.writes).toEqual(all.fast.writes.filter(inRanges));
+      expect(fast.writes.length).toBeGreaterThan(0);
+    }
+    const allStack = compare(STACK, [1000], new Set(), 1000);
+    for (const budgets of [[1], [2, 5], [1000]]) {
+      const { fast, outcomes } = compare(STACK, budgets, new Set(), 1000, ranges);
+      expect(outcomes.at(-1)).toEqual({ kind: 'end' });
+      expect(fast.writes).toEqual(allStack.fast.writes.filter(inRanges));
+      expect(fast.writes.some((w) => w.startsWith('56='))).toBe(true);
+    }
+    const { fast } = compare(STACK, [1000], new Set(), 1000, ranges);
+    const { compiled, interpreted } = fast.interpreter.runStats;
+    expect(compiled / (compiled + interpreted)).toBeGreaterThan(0.5);
   });
 });
