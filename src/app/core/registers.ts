@@ -91,12 +91,19 @@ export function registerPart(a: Address): number {
 }
 
 const NEVER = Number.MIN_SAFE_INTEGER;
+const IP = REGISTER_INDEX.IP;
 
-/** The nine 32-bit registers with per-register change stamps (port of `Registers`). */
+/**
+ * The nine 32-bit registers with per-register change stamps (port of `Registers`).
+ * A write stamps its register with the change counter and remembers which part it
+ * wrote as that part's `mask` (spec 04 §8): the masks of L, H, X and E contain one
+ * another exactly as the parts do, so `isDirty` can compare them like the parts.
+ */
 export class RegisterFile {
   readonly values = new Uint32Array(9);
-  private readonly dirty = new Array<number>(9).fill(NEVER);
-  private readonly dirtyParts = new Array<number>(9).fill(0);
+  private readonly dirty = new Float64Array(9).fill(NEVER);
+  /** Mask (as int32) of the part last written, 0 if none. */
+  private readonly dirtyMask = new Int32Array(9);
   private stamp = 0;
 
   /** Unsigned value of the addressed part. */
@@ -113,11 +120,23 @@ export class RegisterFile {
    * converts it to its low 32 bits, as the bigint version masks them).
    */
   setNum(a: Address, value: number): void {
-    const shifted = value << a.rshift;
-    const old = this.values[a.address];
-    this.values[a.address] = ((old & ~a.mask) | (shifted & a.mask)) >>> 0;
-    this.dirty[a.address] = this.stamp;
-    this.dirtyParts[a.address] = registerPart(a);
+    const index = a.address;
+    const mask = a.mask;
+    this.values[index] = (this.values[index] & ~mask) | ((value << a.rshift) & mask);
+    this.dirty[index] = this.stamp;
+    this.dirtyMask[index] = mask;
+  }
+
+  /** EIP as a signed number (a line number). */
+  get instructionPointer(): number {
+    return this.values[IP] | 0;
+  }
+
+  /** `setNum(EIP, ip)` for an integer `ip`. */
+  setInstructionPointer(ip: number): void {
+    this.values[IP] = ip;
+    this.dirty[IP] = this.stamp;
+    this.dirtyMask[IP] = -1;
   }
 
   reset(): void {
@@ -131,8 +150,8 @@ export class RegisterFile {
 
   isDirty(a: Address, steps: number): boolean {
     if (this.stamp - this.dirty[a.address] > steps) return false;
-    const part = registerPart(a);
-    return part !== 0 && (this.dirtyParts[a.address] & part) === part;
+    const mask = a.mask | 0;
+    return registerPart(a) !== 0 && (this.dirtyMask[a.address] & mask) === mask;
   }
 
   updateDirty(): void {

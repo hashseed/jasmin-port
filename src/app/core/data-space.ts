@@ -185,11 +185,11 @@ export class DataSpace {
   // ---- instruction pointer (a line number) ----
 
   getInstructionPointer(): number {
-    return this.registers.get(this.EIP) | 0;
+    return this.registers.instructionPointer;
   }
 
   setInstructionPointer(ip: number): void {
-    this.registers.setNum(this.EIP, ip);
+    this.registers.setInstructionPointer(ip);
   }
 
   // ---- registers ----
