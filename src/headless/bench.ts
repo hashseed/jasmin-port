@@ -2,7 +2,8 @@
  * Benchmark runner (bench/README.md):
  *   node dist/headless/bench.js program.asm [memory bytes]
  * Runs a program the way the app's Run does (per-run parse cache, no step limit)
- * on a fresh machine, prints the final state in the reference harness format on
+ * on a fresh machine, in batches of BENCH_BATCH lines (environment; default
+ * 1,000,000; the app runs batches of 1000), prints the final state in the reference harness format on
  * stdout and `ms=<run time>` on stderr. Parsing the
  * program is not timed.
  */
@@ -21,12 +22,13 @@ function main(argv: string[]): number {
   const interpreter = new Interpreter(dsp, program);
   const noBreakpoints = () => false;
   const output: string[] = [];
+  const batch = Number(process.env['BENCH_BATCH'] ?? 1_000_000);
 
   const start = process.hrtime.bigint();
   interpreter.beginRun(noBreakpoints);
-  let outcome = interpreter.runSteps(1_000_000, noBreakpoints);
+  let outcome = interpreter.runSteps(batch, noBreakpoints);
   while (outcome.kind === 'continue' || outcome.kind === 'sleep') {
-    outcome = interpreter.runSteps(1_000_000, noBreakpoints);
+    outcome = interpreter.runSteps(batch, noBreakpoints);
   }
   if (outcome.kind === 'error') {
     output.push(`ERROR line ${outcome.line}: ${outcome.error.errorMsg}`);

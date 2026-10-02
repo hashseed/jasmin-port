@@ -220,9 +220,19 @@ instead of one by one. The observable behavior is identical: the same registers,
 memory, change stamps and I/O device writes, the same stops at breakpoints (including
 the ignored first one and breakpoints set during the run), the same error lines and
 messages (07 Q-E-1), `JASMINSLEEP` delays, and addresses computed on every execution
-(07 Q-I-18). Compiled code checks a line budget at every jump, so Pause and the live
-panel refreshes keep working in tight loops, and whenever Run yields, the state is
-exactly that of the lines executed so far. Inside compiled code the general registers
+(07 Q-I-18). Most instructions run as specialized code (moves, arithmetic and logic,
+shifts and rotates, `MUL`/`IMUL`/`DIV`/`IDIV` with the same division errors, extensions,
+`XCHG`, `SETcc`, `CMOVcc`, bit tests, the stack, jumps, calls); the others call their
+generic implementation. Compiled code checks a line budget once per straight-line run
+(at every jump), and where less budget is left than the next straight-line run needs,
+it runs code that checks after every line, so Pause and the live panel refreshes keep
+working in tight loops, and whenever Run yields, the state is exactly that of the lines
+executed so far. Flags that the following lines overwrite before anything can see them
+are not computed; every exit, generic instruction, flag reader and memory access that
+may notify a listener counts as seeing them, so the flags are exact whenever the state
+is visible. Memory accesses read and write the memory directly when the address is in
+range and no listener watches the bytes, checked when the access runs. Inside compiled
+code the general registers
 (EAX..EBP, including their 16- and 8-bit parts) live in JavaScript locals; they and
 their change stamps are written back whenever the compiled code returns (budget used
 up, breakpoint, jump out of the compiled lines, error, `JASMINSLEEP`), before every

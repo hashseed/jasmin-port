@@ -108,3 +108,71 @@ refresh. Medians of 12 alternating `bench:browser` runs each, in ms:
 | ------: | -----: | ----: |
 |   1,000 |    102 |   102 |
 |  10,000 |  3,040 | 2,865 |
+
+## Samples
+
+`npm run bench:samples -- [--runs R] [--batch N] [--runner bench.js ...] [case ...]`
+(`node bench/samples.mjs`) runs scaled-up versions of the samples in `public/samples`
+headlessly, checks every result against a JavaScript computation and prints the median
+run time of each (`--list` shows the cases). Each case keeps the sample's hot loops and
+changes only its input: primes factors 90 × 3,999,971, sqrt runs 150,000 calls,
+mergesort and quicksort sort 120,000 and 150,000 dwords (filled by a generator loop,
+since Run parses each `dd` line when it first executes it), life runs 1,000
+generations, fizzbuzz counts to 600,000, fibonacci computes fib(31) recursively and
+ackermann A(3, 9). No sample shifts or rotates, so `crc32` (a table-less CRC-32 over
+300,000 bytes, shift-heavy) is added. With several `--runner` bundles (built from
+different commits) the runs alternate between them. `--batch N` runs Run's batches of
+N lines (`BENCH_BATCH`; the app runs batches of 1000) instead of 1,000,000; `--emit
+DIR` writes the programs instead.
+
+### Results: compiled Run, four optimizations
+
+Same container, 2026-10-02, medians of 5 alternating runs in ms. Each column adds one
+commit to the one before: main; (1) shifts, rotates, MUL/IMUL/DIV/IDIV, MOVZX/MOVSX,
+XCHG, SETcc, CMOVcc, CBW..CDQ and NOP compiled; (2) dead flag elimination; (3) inline
+memory access for PUSH/POP of memory and BT*, and shorter code (one write-back
+function, one exit), so that large regions keep their registers in locals; (4) stepwise
+code for the end of a batch instead of interpreting its last lines.
+
+Batches of 1,000,000 lines:
+
+| Case      | main |  (1) |  (2) | (3) | (4) |
+| --------- | ---: | ---: | ---: | --: | --: |
+| primes    |  525 |  196 |  196 | 179 | 177 |
+| sqrt      |  659 |  354 |  348 | 246 | 246 |
+| mergesort | 1061 | 1016 | 1051 | 328 | 332 |
+| quicksort | 1088 | 1040 | 1031 | 394 | 393 |
+| life      |  640 |  676 |  630 | 280 | 282 |
+| fizzbuzz  |  521 |  288 |  282 | 221 | 218 |
+| fibonacci |  435 |  445 |  456 | 289 | 301 |
+| ackermann |  578 |  587 |  611 | 467 | 448 |
+| crc32     |  505 |  178 |  151 | 118 | 122 |
+
+Batches of 1,000 lines, as in the app:
+
+| Case      | main | (1) | (2) | (3) | (4) |
+| --------- | ---: | --: | --: | --: | --: |
+| primes    |  450 | 153 | 155 | 158 | 146 |
+| sqrt      |  621 | 257 | 270 | 251 | 243 |
+| mergesort |  368 | 358 | 372 | 255 | 258 |
+| quicksort |  892 | 834 | 818 | 337 | 339 |
+| life      |  732 | 741 | 705 | 322 | 302 |
+| fizzbuzz  |  524 | 287 | 257 | 239 | 239 |
+| fibonacci |  246 | 245 | 245 | 222 | 225 |
+| ackermann |  502 | 527 | 513 | 460 | 424 |
+| crc32     |  484 | 164 | 137 | 143 | 126 |
+
+(1) pays off wherever these instructions are in a hot loop (primes, sqrt, fizzbuzz,
+crc32). (2) mainly helps the shift-heavy crc32. (3) is the largest step for the
+recursive and memory-bound cases: before it, the merge and quick sort regions were too
+long for V8 to optimize with locals (they kept the registers in `V`), and V8
+deoptimized long-running regions at their exits. (4) only matters with small batches.
+Some cases are faster with batches of 1000 than of 1,000,000: V8 then optimizes the
+region functions as a whole instead of by on-stack replacement of a running loop.
+
+Bubblesort of 10,000 entries (`bench/bubblesort.mjs`, headless, batches of 1,000,000,
+median of 3 alternating runs): main 1,754 ms, (1) 1,737, (2) 1,489, (3) 1,368, (4) 1,339.
+
+In the browser (`bench:browser`, medians of 5 alternating runs of production builds of
+main and of all four steps, in ms): 1,000 entries 112 → 77, 10,000 entries
+2,357 → 1,750.

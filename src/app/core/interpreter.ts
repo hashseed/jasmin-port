@@ -171,16 +171,18 @@ export class Interpreter {
       }
       // Compiled code assumes no out-of-range state is left over (it only tests it
       // after lines that can set it); a leftover one runs line by line.
-      if (region && region.entryCost(line) <= maxSteps - n && !dsp.addressOutOfRange()) {
+      if (region && !dsp.addressOutOfRange()) {
+        // The budget runs out before the next jump: the code that counts every line.
+        const code = region.entryCost(line) <= maxSteps - n ? region : region.stepwise();
         executed = true;
-        const count = region.run(line, maxSteps - n);
+        const count = code.run(line, maxSteps - n);
         n += count;
         stats.compiled += count;
-        const error = region.error;
+        const error = code.error;
         if (error) {
-          region.error = null;
+          code.error = null;
           dsp.pendingSleepMs = 0;
-          outcome = { kind: 'error', line: region.errorLine, error };
+          outcome = { kind: 'error', line: code.errorLine, error };
           break;
         }
         if (dsp.pendingSleepMs > 0) {
