@@ -4,7 +4,7 @@
 
 | Path | Contents |
 |---|---|
-| `conformance/programs/NN-name.asm` | 51 programs. 01-42 are small programs covering every instruction family, data directives, addressing, labels, errors and runtime faults. 43 and 44 are the only tests in the original repository (`tests/carry-sub_add.asm`, `tests/overflow-sub_add.asm`, copied unchanged): 16 8-bit ADD/SUB cases each, recording CF or OF as bits in BX. Their final comment states the intended BX, which the original matches (`0xD48E`, `0x4218`) and which equals real x86. 45-51 (`NN-sample-*`) are the Welcome page's sample programs, identical to `public/samples/*.asm`: programs from 2007 found in the original's SourceForge archive (`OldFiles/Archive.zip`), converted to the current syntax and fixed where they gave wrong results |
+| `conformance/programs/NN-name.asm` | 51 programs. 01-42 are small programs covering every instruction family, data directives, addressing, labels, errors and runtime faults. 43 and 44 are the only tests in the original repository (`tests/carry-sub_add.asm`, `tests/overflow-sub_add.asm`, copied unchanged): 16 8-bit ADD/SUB cases each, recording CF or OF as bits in BX. Their final comment states the intended BX, which the original matches (`0xD48E`, `0x4218`) and which equals real x86. 45-51 (`NN-sample-*`) are the Welcome page's sample programs, identical to `public/samples/*.asm`: programs from 2007 found in the original's SourceForge archive (`OldFiles/Archive.zip`), converted to the current syntax with English labels and comments, and fixed where they gave wrong results |
 | `conformance/programs/NN-name.expected` | Final machine state produced by the **original** Java interpreter (pinned commit) |
 | `conformance/programs/NN-name.port.expected` | Expected output of the **port**, only for the 26 programs where an owner-approved fix changes the result (§3). Other programs share `NN-name.expected` |
 | `conformance/run-conformance.sh` | Runs the programs against either implementation and compares (§4) |
@@ -71,9 +71,9 @@ this table explains them. When a FIX/KEEP decision changes, update both.
 | 40-cmpxchg-notequal | Q-I-4, Q-F-1 | `EAX=0x00000006`; `AF=1` |
 | 42-imul-flags | Q-I-2 | `CF=0 OF=0` |
 | 48-sample-mergesort | Q-F-1 | `AF=0` |
-| 49-sample-prim | Q-F-1 | `AF=0` |
+| 49-sample-primes | Q-F-1 | `AF=0` |
 | 50-sample-quicksort | Q-F-1 | `AF=0` |
-| 51-sample-wurzel | Q-F-1 | `AF=0` |
+| 51-sample-sqrt | Q-F-1 | `AF=0` |
 
 The Q-F-1 and Q-I-13 rows were produced by running the original with those two fixes
 patched in (correct `AF` formula; `PUSH`/`POP` default size 4), so they are exact.

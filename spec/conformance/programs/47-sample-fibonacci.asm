@@ -1,26 +1,26 @@
-; Fibonacci-Zahlen (rekursiv), Ergebnis in edx: fib(15) = 610
-   jmp programm
-fibrek:
+; Fibonacci numbers (recursive), result in edx: fib(15) = 610
+   jmp main
+fib:
    push eax
    push ecx
    cmp ecx, 1
-   je abbruch
-   jecxz abbruch
-   jmp normal
-abbruch:
+   je base_case
+   jecxz base_case
+   jmp recurse
+base_case:
    mov edx, ecx
-   jmp ende
-normal:
+   jmp done
+recurse:
    dec ecx
-   call fibrek
+   call fib
    mov eax, edx
    dec ecx
-   call fibrek
+   call fib
    add edx, eax
-ende:
+done:
    pop ecx
    pop eax
    ret
-programm:
+main:
    mov ecx, 15
-   call fibrek
+   call fib

@@ -1,21 +1,21 @@
-; Mergesort: sortiert die Zahlen ab daten aufsteigend (siehe Speicher)
-jmp programm
+; Mergesort: sorts the numbers at data in ascending order (see memory)
+jmp main
 mergesort:
    cmp esi, edi
-   jz ende
+   jz done
    push edx
-   push edx ; Start für ecx
-   mov ebx, edx ; ebx merkt stellung von edx
-   mov ecx, esi ; ecx spleißt die liste
-   schleife1:
+   push edx ; start for ecx
+   mov ebx, edx ; ebx remembers the position of edx
+   mov ecx, esi ; ecx splits the list
+   split1:
       cmp ecx, edi
-      jg weiter1
+      jg split1_done
       add edx, 4
       mov eax, [ecx]
       mov [edx], eax
       add ecx, 8
-      jmp schleife1
-   weiter1:
+      jmp split1
+   split1_done:
 
    mov [climit], edx
    push esi
@@ -33,16 +33,16 @@ mergesort:
    mov ebx, edx
    mov ecx, esi
    add ecx, 4
-   push edx ; Start für ebx
-   schleife2:
+   push edx ; start for ebx
+   split2:
       cmp ecx, edi
-      jg weiter2
+      jg split2_done
       add edx, 4
       mov eax, [ecx]
       mov [edx], eax
       add ecx, 8
-      jmp schleife2
-   weiter2:
+      jmp split2
+   split2_done:
    mov [blimit], edx
 
 
@@ -59,63 +59,63 @@ mergesort:
    pop edi
    pop esi
 
-   zusammenfuegen:
+   merge:
 
-   mov edx, esi ; edx ziel
+   mov edx, esi ; edx: destination
    pop ebx
    pop ecx ; ecx source1, ebx source2
 
    add ecx, 4
 
    add ebx, 4
-   schleife3:
+   merge_loop:
       cmp edx, edi
-      jg ende2
+      jg done2
       mov eax, [ecx]
       cmp eax, [ebx]
-      jl kleiner
+      jl take_c
          mov eax, [ebx]
          mov [edx], eax
          add edx, 4
          cmp ebx, [blimit]
-         jge blim
+         jge b_done
          add ebx, 4
-         jmp schleife3
-         blim:
-         mov ebx, null
-         jmp schleife3
-      kleiner:
+         jmp merge_loop
+         b_done:
+         mov ebx, infinity
+         jmp merge_loop
+      take_c:
          mov [edx], eax
          add edx, 4
 
          cmp ecx, [climit]
-         jge clim
+         jge c_done
          add ecx, 4
-         jmp schleife3
-         clim:
-         mov ecx, null
-            jmp schleife3
-   ende2:
+         jmp merge_loop
+         c_done:
+         mov ecx, infinity
+            jmp merge_loop
+   done2:
    pop edx
-   ende:
+   done:
    ret
 
-programm:
-daten:
+main:
+data:
 dd 12, 14, 15, 1, 12, 11, 44, 345, 35627, 125, 34626, 435, 78, 987345, 234, 235, 151, 236, 234, 2, 25, 2623, 6
 
-datenende:
+data_end:
 dd 0, 0, 0, 0, 0, 0
 blimit:
 dd 0
 climit:
 dd 0
-null:
+infinity:
 dd 0x7FFFFFFF
-sortierraum:
+scratch:
 dd 0
-mov esi, daten
-mov edi, datenende
+mov esi, data
+mov edi, data_end
 sub edi, 4
-mov edx, sortierraum
+mov edx, scratch
 call mergesort

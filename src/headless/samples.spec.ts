@@ -27,10 +27,10 @@ function dwords(state: MachineState, address: number, count: number): number[] {
   return Array.from({ length: count }, (_, i) => view.getInt32(address + 4 * i, true));
 }
 
-/** The numbers a sorting sample starts with: the `dd` lines between `daten:` and `datenende:`. */
+/** The numbers a sorting sample starts with: the `dd` lines between `data:` and `data_end:`. */
 function data(file: string): number[] {
   const source = readFileSync(join(samples, file), 'utf8');
-  const block = source.slice(source.indexOf('daten:'), source.indexOf('datenende:'));
+  const block = source.slice(source.indexOf('data:'), source.indexOf('data_end:'));
   return [...block.matchAll(/^dd (.*)$/gm)].flatMap((m) => m[1].split(',').map(Number));
 }
 
@@ -66,18 +66,18 @@ describe('samples', () => {
     expect(run('fibonacci.asm').registers.EDX).toBe(610);
   });
 
-  it('prim factors 1234567890', () => {
-    expect(dwords(run('prim.asm'), 0, 7)).toEqual([2, 3, 3, 5, 3607, 3803, 0]);
+  it('primes factors 1234567890', () => {
+    expect(dwords(run('primes.asm'), 0, 7)).toEqual([2, 3, 3, 5, 3607, 3803, 0]);
   });
 
-  it('wurzel computes the square root of 0xFFFFFFFF', () => {
-    expect(run('wurzel.asm').registers.EAX).toBe(65535);
+  it('sqrt computes the square root of 0xFFFFFFFF', () => {
+    expect(run('sqrt.asm').registers.EAX).toBe(65535);
   });
 
   it.each([
     0, 1, 2, 3, 4, 8, 9, 10, 99, 100, 101, 65535, 65536, 2147395599, 2147395600, 4294836224,
-  ])('wurzel rounds the square root of %i down', (n) => {
-    const state = run('wurzel.asm', (s) => s.replace('mov eax, -1', `mov eax, ${n}`));
+  ])('sqrt rounds the square root of %i down', (n) => {
+    const state = run('sqrt.asm', (s) => s.replace('mov eax, -1', `mov eax, ${n}`));
     expect(state.registers.EAX).toBe(Math.floor(Math.sqrt(n)));
   });
 });

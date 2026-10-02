@@ -35,8 +35,8 @@ export const PORT_URL = SOURCE_URL;
     <section>
       <h2>Samples</h2>
       <p>
-        Programs written in 2007 by one of Jasmin's original developers, with German labels. Click
-        one to open it in a new document.
+        Programs written in 2007 by one of Jasmin's original developers. Click one to open it in a
+        new document.
       </p>
       <ul class="samples">
         @for (sample of samples; track sample.file) {
