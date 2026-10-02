@@ -14,13 +14,19 @@ body {
 }
 
 body {
-  min-width: 800px;
-  min-height: 600px;
   background: var(--bg-app);
   color: var(--text);
   font-family: var(--font-ui);
   font-size: var(--font-size-ui);
   -webkit-font-smoothing: antialiased;
+}
+
+/* Below 800px wide the document view stacks its sections instead (spec 02 §1). */
+@media (min-width: 800px) {
+  body {
+    min-width: 800px;
+    min-height: 600px;
+  }
 }
 
 :focus-visible {

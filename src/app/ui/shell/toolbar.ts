@@ -64,6 +64,13 @@ export function tooltipOf(action: AppAction): string {
       gap: 2px;
       height: var(--toolbar-height);
       padding: 0 var(--space-2);
+      /* Narrow screens scroll the toolbar sideways rather than the page. */
+      overflow-x: auto;
+      scrollbar-width: none;
+    }
+    .tool,
+    .separator {
+      flex: none;
     }
     .separator {
       width: 1px;

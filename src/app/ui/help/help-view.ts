@@ -82,6 +82,15 @@ import { WelcomePage } from './welcome-page';
       font-size: 15px;
       line-height: 1.5;
       text-align: center;
+      overflow-wrap: anywhere;
+    }
+    /* Narrow screens: full width with the usual 16px gutters. */
+    @media (max-width: 799px) {
+      .page {
+        width: auto;
+        min-width: 0;
+        margin: 0 var(--space-4);
+      }
     }
     .logo {
       display: block;
