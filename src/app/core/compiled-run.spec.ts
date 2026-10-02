@@ -162,6 +162,16 @@ describe('compiled Run (spec 04 §9.3 port note)', () => {
     }
   });
 
+  it('splits long programs into several regions', () => {
+    const body = Array.from({ length: 450 }, (_, k) => `add eax, ${k}\nxor ebx, eax`).join('\n');
+    const source = `mov ecx, 30\ntop: ${body}\ndec ecx\njnz top`;
+    for (const budgets of [[1000], [37, 400]]) {
+      const { fast, outcomes } = compare(source, budgets, new Set(), 1000);
+      expect(outcomes.at(-1)).toEqual({ kind: 'end' });
+      expect(fast.interpreter.runStats.regions).toBeGreaterThan(4);
+    }
+  });
+
   it('specializes the common instructions', () => {
     const source =
       'mov eax, [ebx+4]\nadd eax, 1\njne 0\npush eax\nimul eax, 3\npop bx\nret\nshl eax, 1';
