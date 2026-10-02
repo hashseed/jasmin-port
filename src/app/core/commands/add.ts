@@ -12,6 +12,10 @@ export class Add extends Command {
   }
 
   execute(p: Parameters): void {
+    if (p.numeric) {
+      this.executeNum(p);
+      return;
+    }
     p.prepareAB();
     const carry = this.dsp.fCarry ? 1n : 0n;
     let subtrahend: bigint | undefined;
@@ -37,5 +41,35 @@ export class Add extends Command {
     }
     this.setFlags(p, Flag.OF | Flag.SF | Flag.ZF | Flag.AF | Flag.CF | Flag.PF, subtrahend);
     if (p.mnemo !== 'CMP') p.put(0, p.result, null);
+  }
+
+  /**
+   * `execute` on numbers. The operands are 32-bit values or small immediates, so
+   * the sums are exact and equal the Java long results (no 64-bit wraparound).
+   */
+  private executeNum(p: Parameters): void {
+    const a = p.getNum(0);
+    const b = p.getNum(1);
+    const carry = this.dsp.fCarry ? 1 : 0;
+    let result: number;
+    switch (p.mnemo) {
+      case 'ADD':
+        result = a + b;
+        break;
+      case 'ADC':
+        result = a + b + carry;
+        break;
+      case 'SBB':
+        result = a - b - carry;
+        break;
+      default: // SUB, CMP
+        result = a - b;
+        break;
+    }
+    const flags = Flag.OF | Flag.SF | Flag.ZF | Flag.AF | Flag.CF | Flag.PF;
+    if (p.mnemo === 'ADD' || p.mnemo === 'ADC') this.setFlagsNum(p.size, flags, a, b, result, b);
+    // setFlags() expects the negated subtrahend in b; AF uses the original (07 Q-F-1).
+    else this.setFlagsNum(p.size, flags, a, -b, result, b);
+    if (p.mnemo !== 'CMP') p.putNum(0, result, null);
   }
 }

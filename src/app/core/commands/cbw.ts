@@ -1,5 +1,4 @@
 import { Command } from '../command';
-import { shr } from '../java';
 import { Op } from '../op';
 import { Parameters } from '../parameters';
 
@@ -17,20 +16,21 @@ export class Cbw extends Command {
 
   execute(p: Parameters): void {
     const d = this.dsp;
+    // Register operands only, read sign-extended: numbers suffice.
     switch (p.mnemo) {
       case 'CBW':
-        p.putAddress(d.AX, p.getAddress(d.AL), null);
+        p.putAddressNum(d.AX, p.getAddressNum(d.AL), null);
         break;
       case 'CWDE':
-        p.putAddress(d.EAX, p.getAddress(d.AX), null);
+        p.putAddressNum(d.EAX, p.getAddressNum(d.AX), null);
         break;
       case 'CWD':
-        p.a = shr(p.getAddress(d.AX), 16) & 0xffffn;
-        p.putAddress(d.DX, p.a, null);
+        // The sign of AX: (AX >> 16) & 0xFFFF as a long.
+        p.putAddressNum(d.DX, (p.getAddressNum(d.AX) >> 16) & 0xffff, null);
         break;
       case 'CDQ':
-        p.a = shr(p.getAddress(d.EAX), 32);
-        p.putAddress(d.EDX, p.a, null);
+        // The sign of EAX: EAX >> 32 as a long, i.e. 0 or -1.
+        p.putAddressNum(d.EDX, p.getAddressNum(d.EAX) >> 31, null);
         break;
     }
   }

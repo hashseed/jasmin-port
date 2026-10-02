@@ -20,6 +20,10 @@ export class Bt extends Command {
   }
 
   execute(p: Parameters): void {
+    if (p.numeric) {
+      this.executeNum(p);
+      return;
+    }
     let offset = p.get(1);
     // Register destinations work on a copy of the register handle (07 Q-I-5).
     const a = p.argument(0).address.clone();
@@ -38,6 +42,34 @@ export class Bt extends Command {
       p.putAddress(a, this.setBit(p.getAddress(a), true, offset), null);
     } else if (p.mnemo.endsWith('R')) {
       p.putAddress(a, this.setBit(p.getAddress(a), false, offset), null);
+    }
+  }
+
+  /**
+   * `execute` on numbers: the bit offset is below 2^32 and, once reduced, below 32,
+   * and the operand has at most 32 bits.
+   */
+  private executeNum(p: Parameters): void {
+    let offset = p.getNum(1);
+    // Register destinations work on a copy of the register handle (07 Q-I-5).
+    const a = p.argument(0).address.clone();
+    if (matches(p.type(0), Op.REG)) offset = offset % (p.sizeOf(0) * 8);
+    if (matches(p.type(0), Op.MEM)) {
+      const arg = p.argument(0);
+      if (arg.cAddress) a.address = arg.cAddress.calculateEffectiveAddress(true);
+      a.address = (a.address + Math.floor(offset / 8)) | 0;
+      offset = offset % 8;
+    }
+    const d = this.dsp;
+    const bit = 1 << offset;
+    d.fCarry = (p.getAddressNum(a) & bit) !== 0;
+    if (p.mnemo.endsWith('C')) {
+      const value = p.getAddressNum(a);
+      p.putAddressNum(a, d.fCarry ? value & ~bit : value | bit, null);
+    } else if (p.mnemo.endsWith('S')) {
+      p.putAddressNum(a, p.getAddressNum(a) | bit, null);
+    } else if (p.mnemo.endsWith('R')) {
+      p.putAddressNum(a, p.getAddressNum(a) & ~bit, null);
     }
   }
 }

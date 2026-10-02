@@ -1,5 +1,5 @@
 import { Command } from '../command';
-import { long, shr } from '../java';
+import { long, mulHighU32, shr } from '../java';
 import { Op } from '../op';
 import { Parameters } from '../parameters';
 
@@ -12,6 +12,10 @@ export class Mul extends Command {
   }
 
   execute(p: Parameters): void {
+    if (p.numeric) {
+      this.executeNum(p);
+      return;
+    }
     const d = this.dsp;
     p.a = p.get(0);
     if (p.size === 1) {
@@ -30,5 +34,28 @@ export class Mul extends Command {
       p.putAddress(d.EDX, p.result, null);
     }
     d.fOverflow = d.fCarry = p.result !== 0n;
+  }
+
+  /** `execute` on numbers; the 32-bit product's high half comes from `mulHighU32`. */
+  private executeNum(p: Parameters): void {
+    const d = this.dsp;
+    const a = p.getNum(0);
+    let high = 0;
+    if (p.size === 1) {
+      const ax = d.registers.get(d.AL) * a;
+      p.putAddressNum(d.AX, ax, null);
+      high = ax >>> 8;
+    } else if (p.size === 2) {
+      const dxax = d.registers.get(d.AX) * a;
+      p.putAddressNum(d.AX, dxax & 0xffff, null);
+      high = dxax >>> 16;
+      p.putAddressNum(d.DX, high, null);
+    } else if (p.size === 4) {
+      const eax = d.registers.get(d.EAX);
+      p.putAddressNum(d.EAX, Math.imul(eax, a) >>> 0, null);
+      high = mulHighU32(eax, a);
+      p.putAddressNum(d.EDX, high, null);
+    }
+    d.fOverflow = d.fCarry = high !== 0;
   }
 }

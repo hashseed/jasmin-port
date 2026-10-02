@@ -55,10 +55,14 @@ export class Mov extends Command {
   }
 
   execute(p: Parameters): void {
-    if (p.mnemo !== 'MOV' && !this.testCC(p.mnemo.substring(4))) return;
+    if (p.mnemo !== 'MOV' && !this.testCondition(this.conditionOf(p, 4))) return;
     if (p.type(1) === Op.LABEL) {
       const a = p.argument(1);
-      p.put(0, p.get(1), { type: a.address.type, value: a.arg, size: a.address.size });
+      const info = { type: a.address.type, value: a.arg, size: a.address.size };
+      if (p.numeric) p.putNum(0, p.getNum(1), info);
+      else p.put(0, p.get(1), info);
+    } else if (p.numeric) {
+      p.putNum(0, p.getNum(1), null);
     } else {
       p.put(0, p.get(1), null);
     }

@@ -12,8 +12,8 @@ export class Call extends Command {
   }
 
   execute(p: Parameters): void {
-    p.a = p.get(0);
+    const target = p.numeric ? p.getNum(0) | 0 : Number(int(p.get(0)));
     p.push(this.dsp.EIP);
-    this.dsp.setInstructionPointer(Number(int(p.a)));
+    this.dsp.setInstructionPointer(target);
   }
 }

@@ -12,6 +12,22 @@ export class Xadd extends Command {
   }
 
   execute(p: Parameters): void {
+    if (p.numeric) {
+      const a = p.getNum(0);
+      const b = p.getNum(1);
+      const result = a + b;
+      this.setFlagsNum(
+        p.size,
+        Flag.OF | Flag.SF | Flag.ZF | Flag.AF | Flag.CF | Flag.PF,
+        a,
+        b,
+        result,
+        b,
+      );
+      p.putNum(1, p.getNum(0), null);
+      p.putNum(0, result, null);
+      return;
+    }
     p.prepareAB();
     p.result = long(p.a + p.b);
     this.setFlags(p, Flag.OF | Flag.SF | Flag.ZF | Flag.AF | Flag.CF | Flag.PF);

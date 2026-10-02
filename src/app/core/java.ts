@@ -21,6 +21,47 @@ export const ushr = (value: bigint, count: bigint | number): bigint =>
 export const shl = (value: bigint, count: bigint | number): bigint =>
   long(value << (BigInt(count) & 63n));
 
+/**
+ * Bound for static operand values handled as numbers: sums and differences of
+ * such values with 32-bit operands stay far below 2^53, so they are exact.
+ */
+const SMALL_LIMIT = 2n ** 48n;
+
+/** `value` as a number if |value| <= 2^48, else NaN (callers then use bigints). */
+export const smallNumber = (value: bigint): number =>
+  value >= -SMALL_LIMIT && value <= SMALL_LIMIT ? Number(value) : NaN;
+
+/** 2^32, for splitting numbers into 32-bit halves. */
+export const TWO_32 = 4294967296;
+
+/**
+ * High 32 bits of the 64-bit product of two unsigned 32-bit integers, from 16-bit
+ * partial products (each below 2^32, so all sums are exact).
+ */
+export function mulHighU32(a: number, b: number): number {
+  const aLow = a & 0xffff;
+  const aHigh = a >>> 16;
+  const bLow = b & 0xffff;
+  const bHigh = b >>> 16;
+  const lowHigh = aLow * bHigh;
+  const highLow = aHigh * bLow;
+  const middle = ((aLow * bLow) >>> 16) + (lowHigh & 0xffff) + (highLow & 0xffff);
+  return (
+    aHigh * bHigh +
+    Math.floor(lowHigh / 65536) +
+    Math.floor(highLow / 65536) +
+    Math.floor(middle / 65536)
+  );
+}
+
+/** High 32 bits (signed) of the 64-bit product of two signed 32-bit integers. */
+export function mulHighS32(a: number, b: number): number {
+  let high = mulHighU32(a >>> 0, b >>> 0);
+  if (a < 0) high -= b >>> 0;
+  if (b < 0) high -= a >>> 0;
+  return high | 0;
+}
+
 /** Mask with the low `size * 8` bits set, as `((long) 1 << (size * 8)) - 1`. */
 export const sizeMask = (size: number): bigint => long(shl(1n, size * 8) - 1n);
 

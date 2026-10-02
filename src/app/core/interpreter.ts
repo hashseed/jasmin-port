@@ -34,8 +34,11 @@ interface CachedLine {
  * the UI responsive and pause between batches.
  */
 export class Interpreter {
-  /** Run's per-line parse cache (spec 04 §9.3), valid between beginRun and endRun. */
-  private cache = new Map<number, CachedLine>();
+  /**
+   * Run's per-line parse cache (spec 04 §9.3), valid between beginRun and endRun.
+   * Indexed by line number (an array is cheaper than a Map in the run loop).
+   */
+  private cache: (CachedLine | undefined)[] = [];
   private skipBreakpointAt = -1;
 
   constructor(
@@ -78,7 +81,7 @@ export class Interpreter {
    * EIP once (spec 04 §9.3 step 2).
    */
   beginRun(isBreakpoint: (line: number) => boolean): void {
-    this.cache.clear();
+    this.cache = [];
     const ip = this.dsp.getInstructionPointer();
     this.skipBreakpointAt = isBreakpoint(ip) ? ip : -1;
   }
@@ -111,7 +114,7 @@ export class Interpreter {
   /** Ends a run: advances the change counter once (spec 04 §8) and drops the cache. */
   endRun(): void {
     this.dsp.updateDirty();
-    this.cache.clear();
+    this.cache = [];
     this.skipBreakpointAt = -1;
   }
 
@@ -124,14 +127,14 @@ export class Interpreter {
    * parses, validates and executes the line; later visits reuse the parsed command.
    */
   private executeCached(line: number): ParseError | null {
-    const cached = this.cache.get(line);
+    const cached = this.cache[line];
     if (cached) {
       return cached.command && cached.param
         ? this.program.parser.run(cached.command, cached.param)
         : null;
     }
     const parsed = this.program.parser.parse(this.program.line(line), this.program.lastLabel(line));
-    this.cache.set(line, { command: parsed.command, param: parsed.param });
+    this.cache[line] = { command: parsed.command, param: parsed.param };
     return this.program.parser.executeParsed(parsed, false);
   }
 }

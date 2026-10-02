@@ -34,3 +34,19 @@ On a 4-core Linux cloud container (OpenJDK 21, Node 24), 2026-10-02:
 The original runs about 40 million instructions per second, the port about 2.5
 million. A CPU profile of the port puts most of the time in the Java `long`
 emulation with `BigInt` (`core/java.ts`), above all in flag computation (`setFlags`).
+
+### After moving the core to numbers
+
+The core now computes operands of up to 32 bits with plain numbers and keeps
+`BigInt` only for 64-bit values (8-byte memory and FPU operands, MUL/IMUL products
+beyond 2^62, DIV dividends beyond 2^53, rotates and double shifts). Same container,
+2026-10-02:
+
+| Entries | Instructions | Java (ms) | TypeScript (ms) | TS / Java | Result |
+| ------: | -----------: | --------: | --------------: | --------: | ------ |
+|     100 |       52,861 |        30 |              27 |       0.9 | ok     |
+|   1,000 |    5,025,009 |       229 |             327 |       1.4 | ok     |
+|  10,000 |  500,721,593 |    13,302 |          29,000 |       2.2 | ok     |
+
+The port now runs about 15 million instructions per second (1,000 entries: 2,120 ms
+on the original main, 1,328 ms with number flags, 327 ms now).

@@ -12,6 +12,10 @@ export class Inc extends Command {
   }
 
   execute(p: Parameters): void {
+    if (p.numeric) {
+      this.executeNum(p);
+      return;
+    }
     p.a = p.get(0);
     let subtrahend: bigint | undefined;
     switch (p.mnemo) {
@@ -39,5 +43,32 @@ export class Inc extends Command {
     }
     if (p.mnemo === 'NEG') this.dsp.fCarry = p.result !== 0n;
     p.put(0, p.result, null);
+  }
+
+  /** `execute` on numbers (exact: the operand has at most 32 bits). */
+  private executeNum(p: Parameters): void {
+    const a = p.getNum(0);
+    const flags = Flag.OF | Flag.SF | Flag.ZF | Flag.AF | Flag.PF;
+    let result: number;
+    switch (p.mnemo) {
+      case 'INC':
+        result = a + 1;
+        this.setFlagsNum(p.size, flags, a, 1, result, 1);
+        break;
+      case 'DEC':
+        result = a - 1;
+        this.setFlagsNum(p.size, flags, a, -1, result, 1);
+        break;
+      case 'NEG':
+        // 0 + (-a), with the subtrahend a for AF.
+        result = -a;
+        this.setFlagsNum(p.size, flags, 0, -a, result, a);
+        this.dsp.fCarry = result !== 0;
+        break;
+      default: // NOT
+        result = ~a;
+        break;
+    }
+    p.putNum(0, result, null);
   }
 }

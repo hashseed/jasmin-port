@@ -14,6 +14,12 @@ export class Xchg extends Command {
   }
 
   execute(p: Parameters): void {
+    if (p.numeric) {
+      const tmp = p.getNum(1);
+      p.putNum(1, p.getNum(0), null);
+      p.putNum(0, tmp, null);
+      return;
+    }
     const tmp = p.get(1);
     p.put(1, p.get(0), null);
     p.put(0, tmp, null);
