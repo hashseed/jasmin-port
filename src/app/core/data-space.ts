@@ -51,6 +51,7 @@ export class DataSpace {
   readonly memory: Memory;
   readonly registers = new RegisterFile();
   private readonly registerTable = new Map<string, Address>();
+  private readonly stackTop = new Address(Op.MEM, 4, 0);
   private memInfo = new Map<number, MemCellInfo>();
   private regInfo = new Map<number, MemCellInfo>();
   private nextReservableAddress: number;
@@ -214,9 +215,15 @@ export class DataSpace {
     return null;
   }
 
-  /** The current stack top as a memory operand of `size` bytes. */
+  /**
+   * The current stack top as a memory operand of `size` bytes. The same object is
+   * reused by every call, so use it before calling `stack` again.
+   */
   stack(size: number): Address {
-    return new Address(Op.MEM, size, this.registers.get(this.ESP) | 0);
+    const top = this.stackTop;
+    top.size = size;
+    top.address = this.registers.get(this.ESP) | 0;
+    return top;
   }
 
   /** ESP as a number (`shortcut(ESP)`). */
