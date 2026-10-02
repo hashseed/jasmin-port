@@ -51,6 +51,8 @@ import { RUNTIME_STACK_ERROR } from './parser';
  *   effective addresses are still computed on every execution (07 Q-I-18);
  * - every other instruction calls its command's `execute` (one call site per line,
  *   so no shared dispatch) and checks the result like `Parser.checkResult`;
+ * - a line records no lazy flags when later lines of the same straight-line run
+ *   overwrite them all before anything can see them (`deadFlags`);
  * - it never executes more than `budget` lines: entering at a line needs room for
  *   all lines up to the next jump, and every jump checks the budget again, so a
  *   tight loop returns to the run loop when the budget is used up;
@@ -235,6 +237,8 @@ class RegionCompiler {
   private readonly clean: Uint8Array;
   /** Jumps that stay in the function (`continue`): [from, to] lines. */
   private readonly edges: [number, number][] = [];
+  /** Per line: 1 if the lazy flags it records are dead (`deadFlags`), so it records none. */
+  private dead: Uint8Array | null = null;
 
   constructor(
     private readonly dsp: DataSpace,
@@ -259,6 +263,7 @@ class RegionCompiler {
       const stops = jumps(this.lines[line]!) || line === this.end || this.isStop(line + 1);
       this.cost[i] = stops ? 1 : this.cost[i + 1] + 1;
     }
+    this.dead = this.deadFlags();
     const cases: string[] = [];
     let specialized = 0;
     let previous: FlagState | undefined;
@@ -384,6 +389,43 @@ class RegionCompiler {
       }
     }
     return { in: into, out };
+  }
+
+  /**
+   * Dead flag elimination: per line, 1 if the lazy flags it records
+   * (`setFlagsLazy`) are all overwritten by the following lines of its straight-line
+   * run before anything could read them. Then the line records none: the
+   * overwriting lines leave the same flags either way (see `FlagEffect`).
+   *
+   * Everything that could see the flags counts as a read: an instruction that tests
+   * them, a line that calls `execute`, every jump (each checks the budget and may
+   * return), falling into a breakpoint or off the region, and every line that can
+   * leave the code before its end (memory and stack accesses, whose fallbacks may
+   * call a memory listener or fail; DIV and IDIV, which may fail). So the
+   * overwriting lines, the line itself and the lines between work on registers and
+   * immediates only and never return or call out in between.
+   */
+  private deadFlags(): Uint8Array {
+    const count = this.end - this.start + 1;
+    const effects = Array.from({ length: count }, (_, i) =>
+      flagEffect(this.dsp, this.lines[this.start + i]!),
+    );
+    const dead = new Uint8Array(count);
+    for (let i = 0; i < count; i++) {
+      const effect = effects[i];
+      if (!effect || effect.lazy === 0) continue;
+      let killed = 0;
+      for (let k = i + 1; k < count && !this.breakpoint[k]; k++) {
+        const next = effects[k];
+        if (!next || next.reads !== 0 || next.conditional) break;
+        killed |= next.kills;
+        if ((effect.lazy & ~killed) === 0) {
+          dead[i] = 1;
+          break;
+        }
+      }
+    }
+    return dead;
   }
 
   /** Write-back of the locals pending at the start (`<`) or end (`>`) of the line. */
@@ -781,6 +823,7 @@ class RegionCompiler {
 
   /** `DataSpace.setFlagsLazy` inline. */
   private setFlags(state: FlagState, subtrahend: string): string {
+    if (this.dead && this.line >= this.start && this.dead[this.line - this.start]) return '';
     let code = '';
     if (state.lazy !== ALL_FLAGS) {
       code += `w = d.lazyFlags & ${~state.lazy}; if (w !== 0) d.materializeFlags(w);\n`;
@@ -1238,6 +1281,77 @@ class RegionCompiler {
     if (fused === getter) return getter;
     return `(f === ${line - 1} ? ${fused} : ${getter})`;
   }
+}
+
+/**
+ * What a line does to the flags, for dead flag elimination, or null if it may read
+ * them in any way: a line that calls `execute`, jumps, accesses memory (operands
+ * or the stack) or may fail. `kills` are the flags it always overwrites with values
+ * that depend on no flag, `lazy` those it records lazily (`setFlagsLazy`),
+ * `reads` those it reads. A `conditional` line writes flags only sometimes (shifts
+ * by CL).
+ */
+interface FlagEffect {
+  readonly reads: number;
+  readonly lazy: number;
+  readonly kills: number;
+  readonly conditional: boolean;
+}
+
+const NO_FLAGS: FlagEffect = { reads: 0, lazy: 0, kills: 0, conditional: false };
+
+function flagEffect(dsp: DataSpace, entry: RunLine): FlagEffect | null {
+  const command = entry.command;
+  const p = entry.param;
+  if (!command || !p) return NO_FLAGS;
+  if (!isSpecialized(dsp, entry) || jumps(entry)) return null;
+  if (command instanceof Push || command instanceof Pop || command instanceof Div) return null;
+  // LEA computes an address without accessing memory.
+  if (command instanceof Lea) return NO_FLAGS;
+  for (let k = 0; k < p.numArguments; k++) {
+    if (p.argument(k).address.type & Op.MEM) return null;
+  }
+  const effect = (lazy: number, kills: number, reads = 0): FlagEffect => ({
+    reads,
+    lazy,
+    kills: kills | lazy,
+    conditional: false,
+  });
+  const count = () => {
+    const a = p.argument(1).address;
+    return a.dynamic ? null : a.num;
+  };
+  if (command instanceof Add) {
+    return effect(ADD_FLAGS, 0, p.mnemo === 'ADC' || p.mnemo === 'SBB' ? Flag.CF : 0);
+  }
+  if (command instanceof Inc) {
+    if (p.mnemo === 'NOT') return NO_FLAGS;
+    return effect(INC_FLAGS, p.mnemo === 'NEG' ? Flag.CF : 0);
+  }
+  if (command instanceof And) return effect(LOGIC_FLAGS, Flag.OF | Flag.CF);
+  if (command instanceof Shr) {
+    const n = count();
+    if (n === null) return { reads: 0, lazy: SHIFT_FLAGS, kills: 0, conditional: true };
+    if ((n & 31) === 0) return NO_FLAGS;
+    return effect(SHIFT_FLAGS, Flag.CF | ((n & 31) === 1 ? Flag.OF : 0));
+  }
+  if (command instanceof Rcl) {
+    const n = count();
+    const width = p.sizeOf(0) * 8 + (p.mnemo.startsWith('RC') ? 1 : 0);
+    // By CL, or by a multiple of the width (`execute`): may read anything.
+    if (n === null || (n !== 0 && n % width === 0)) return null;
+    if (n === 0) return NO_FLAGS;
+    return effect(
+      0,
+      Flag.CF | (n % width === 1 ? Flag.OF : 0),
+      p.mnemo.startsWith('RC') ? Flag.CF : 0,
+    );
+  }
+  if (command instanceof Mul || command instanceof Imul) return effect(0, Flag.CF | Flag.OF);
+  if (command instanceof Setcc) return effect(0, 0, ALL_FLAGS);
+  if (command instanceof Mov) return p.mnemo === 'MOV' ? NO_FLAGS : effect(0, 0, ALL_FLAGS);
+  const flagless = [Movzx, Movsx, Xchg, Cbw, Nop];
+  return flagless.some((c) => command instanceof c) ? NO_FLAGS : null;
 }
 
 /** Whether a line transfers control itself (or, for JASMINSLEEP, must return). */

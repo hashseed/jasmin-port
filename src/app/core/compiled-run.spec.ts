@@ -681,6 +681,86 @@ top:
     }
   });
 
+  it('records no flags that later lines overwrite, yet stops with exact flags', () => {
+    // Lines 2, 3, 5, 7, 9 and 10 record flags that later lines overwrite (together)
+    // before the jump: only the DEC on line 11 records the flags the jump and a Pause see.
+    const source = `
+top:
+  add eax, 0x7ffffff1
+  sub ebx, eax
+  mov edx, ebx
+  inc ecx
+  movzx esi, cl
+  shl esi, 1
+  lea ebp, [esi+esi*2+1]
+  xor ebp, eax
+  neg edx
+  dec edi
+  jnz top`;
+    const m = machine(source, true);
+    const lines = m.program.results;
+    const code = compileRegion(m.dsp, lines, 0, lines.length - 1, () => false).source;
+    const recorded = [...code.matchAll(/case (\d+):(?:(?!case )[\s\S])*?d\.lazyFlags = /g)].map(
+      (match) => Number(match[1]),
+    );
+    expect(recorded).toEqual([11]);
+    // Every budget, so that runs stop (Pause) after every line of the loop.
+    for (let budget = 1; budget <= 25; budget++) {
+      const { outcomes } = compare(source, [budget, 1000], new Set(), 20);
+      expect(outcomes.every((o) => o.kind === 'continue')).toBe(true);
+    }
+    // Breakpoints inside the run: the line before one is where the code returns.
+    for (const line of [3, 5, 7, 9]) {
+      const { outcomes } = compare(source, [1000], new Set([line]), 50);
+      expect(outcomes.at(-1)).toEqual({ kind: 'breakpoint', line });
+    }
+  });
+
+  it('keeps the flags exact for memory listeners and errors between flag-setting lines', () => {
+    // The stores, the DIV and the stack accesses between the flag-setting lines may
+    // call a listener or fail: the flags before them are recorded.
+    const source = `
+  mov edi, 200
+  mov esp, 1000
+  mov ecx, 30
+top:
+  add eax, 0x12345
+  mov [edi], eax
+  inc ebx
+  push ebx
+  sub ebx, 3
+  pop edx
+  and edx, ecx
+  mov esi, ecx
+  sub esi, 1
+  xor edx, edx
+  div esi
+  or eax, 1
+  loop top`;
+    const flagsSeen = [false, true].map((compiled) => {
+      const m = machine(source, compiled, 4096, 0, [{ start: 200, end: 204 }]);
+      const seen: string[] = [];
+      m.dsp.memory.addListener(
+        () => seen.push(JSON.stringify(m.dsp.flags)),
+        [
+          { start: 200, end: 201 },
+          { start: 996, end: 997 },
+        ],
+      );
+      const isBreakpoint = () => false;
+      m.interpreter.beginRun(isBreakpoint);
+      const outcome = m.interpreter.runSteps(100_000, isBreakpoint);
+      return { seen, outcome: describeOutcome(outcome), stats: m.interpreter.runStats };
+    });
+    expect(flagsSeen[1].outcome).toBe(flagsSeen[0].outcome);
+    expect(flagsSeen[1].outcome).toContain('Division by zero');
+    expect(flagsSeen[1].seen).toEqual(flagsSeen[0].seen);
+    expect(flagsSeen[1].stats.compiled).toBeGreaterThan(300);
+    for (const budgets of [[1000], [7, 13], [11, 3]]) {
+      compare(source, budgets, new Set(), 400, [{ start: 200, end: 201 }]);
+    }
+  });
+
   it('matches the plain loop on random programs (differential fuzzer)', () => {
     // FUZZ_RUNS and FUZZ_BATCHES scale it up (e.g. FUZZ_RUNS=5000 FUZZ_BATCHES=400; hence
     // the long timeout), FUZZ_SEED picks other programs.
