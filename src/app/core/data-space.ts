@@ -1,4 +1,5 @@
 import { Address, MemCellInfo } from './address';
+import { EVEN_PARITY, Flag } from './flags';
 import { Fpu } from './fpu';
 import {
   byte,
@@ -59,14 +60,25 @@ export class DataSpace {
   private variables = new Map<string, number>();
   private constants = new Map<string, bigint>();
 
-  fCarry = false;
-  fOverflow = false;
-  fSign = false;
-  fZero = false;
-  fParity = false;
-  fAuxiliary = false;
+  // Flags. CF, OF, SF, ZF, PF and AF may be pending (`lazyFlags`): then they are
+  // computed from the last arithmetic operation recorded by `setFlagsLazy` when
+  // first read. Every read goes through the accessors below, so it always sees the
+  // value an eager computation would have stored.
+  private cf = false;
+  private of = false;
+  private sf = false;
+  private zf = false;
+  private pf = false;
+  private af = false;
   fTrap = false;
   fDirection = false;
+  /** `Flag` bits still to be computed from the operation below. */
+  private lazyFlags = 0;
+  private lazySize = 4;
+  private lazyA = 0;
+  private lazyB = 0;
+  private lazyResult = 0;
+  private lazySubtrahend = 0;
 
   readonly EAX: Address;
   readonly AX: Address;
@@ -213,6 +225,122 @@ export class DataSpace {
   }
 
   // ---- flags ----
+
+  get fCarry(): boolean {
+    if (this.lazyFlags & Flag.CF) this.materializeFlags(Flag.CF);
+    return this.cf;
+  }
+
+  set fCarry(value: boolean) {
+    this.cf = value;
+    this.lazyFlags &= ~Flag.CF;
+  }
+
+  get fOverflow(): boolean {
+    if (this.lazyFlags & Flag.OF) this.materializeFlags(Flag.OF);
+    return this.of;
+  }
+
+  set fOverflow(value: boolean) {
+    this.of = value;
+    this.lazyFlags &= ~Flag.OF;
+  }
+
+  get fSign(): boolean {
+    if (this.lazyFlags & Flag.SF) this.materializeFlags(Flag.SF);
+    return this.sf;
+  }
+
+  set fSign(value: boolean) {
+    this.sf = value;
+    this.lazyFlags &= ~Flag.SF;
+  }
+
+  get fZero(): boolean {
+    if (this.lazyFlags & Flag.ZF) this.materializeFlags(Flag.ZF);
+    return this.zf;
+  }
+
+  set fZero(value: boolean) {
+    this.zf = value;
+    this.lazyFlags &= ~Flag.ZF;
+  }
+
+  get fParity(): boolean {
+    if (this.lazyFlags & Flag.PF) this.materializeFlags(Flag.PF);
+    return this.pf;
+  }
+
+  set fParity(value: boolean) {
+    this.pf = value;
+    this.lazyFlags &= ~Flag.PF;
+  }
+
+  get fAuxiliary(): boolean {
+    if (this.lazyFlags & Flag.AF) this.materializeFlags(Flag.AF);
+    return this.af;
+  }
+
+  set fAuxiliary(value: boolean) {
+    this.af = value;
+    this.lazyFlags &= ~Flag.AF;
+  }
+
+  /**
+   * Records an operation of `size` <= 4 bytes that sets the `flags` (`Flag` bits)
+   * as `JasminCommand.setFlags` does; they are computed when first read. `a`, `b`
+   * and `result` are the Java long values as exact integers (|value| < 2^53), or
+   * any integers with the same bits 0..32. For subtraction `b` is the negated
+   * subtrahend and `subtrahend` the original one (AF, 07 Q-F-1); otherwise both are
+   * the second operand. Flags still pending from the previous operation that this
+   * one does not set are computed first (INC keeps CF, shifts keep AF, ...).
+   */
+  setFlagsLazy(
+    size: number,
+    flags: number,
+    a: number,
+    b: number,
+    result: number,
+    subtrahend: number,
+  ): void {
+    const kept = this.lazyFlags & ~flags;
+    if (kept !== 0) this.materializeFlags(kept);
+    this.lazySize = size;
+    this.lazyA = a;
+    this.lazyB = b;
+    this.lazyResult = result;
+    this.lazySubtrahend = subtrahend;
+    this.lazyFlags = flags;
+  }
+
+  /** Computes the pending flags among `flags` (all pending ones by default). */
+  materializeFlags(flags = this.lazyFlags): void {
+    const pending = flags & this.lazyFlags;
+    if (pending === 0) return;
+    this.lazyFlags &= ~pending;
+    const bits = this.lazySize * 8;
+    const signShift = bits - 1;
+    const result = this.lazyResult;
+    if (pending & Flag.ZF) {
+      this.zf = (bits === 32 ? result | 0 : result & ((1 << bits) - 1)) === 0;
+    }
+    if (pending & Flag.SF) this.sf = ((result >> signShift) & 1) === 1;
+    if (pending & Flag.PF) this.pf = EVEN_PARITY[result & 0xff] === 1;
+    if (pending & Flag.CF) {
+      // Bit `bits` of the result: carry (or borrow) out of the operand.
+      this.cf = (bits === 32 ? Math.floor(result / TWO_32) & 1 : (result >> bits) & 1) === 1;
+    }
+    if (pending & Flag.OF) {
+      const aSign = (this.lazyA >> signShift) & 1;
+      const bSign = (this.lazyB >> signShift) & 1;
+      const resultSign = (result >> signShift) & 1;
+      this.of = aSign === bSign && resultSign !== aSign;
+    }
+    if (pending & Flag.AF) {
+      // Carry or borrow out of bit 3 (07 Q-F-1): bit 4 of a ^ b ^ result.
+      this.af = ((this.lazyA ^ this.lazySubtrahend ^ result) & 0x10) !== 0;
+    }
+  }
 
   get flags(): FlagState {
     return {
