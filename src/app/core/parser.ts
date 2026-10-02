@@ -336,8 +336,11 @@ export class Parser {
       }
     }
 
+    // The command's own spelling of the mnemonic: a string constant, which the
+    // instructions compare (`p.mnemo === 'ADD'`) faster than the parsed token.
+    const mnemo = cmd.mnemonics.find((m) => m === command) ?? command!;
     const param = new Parameters(this.dsp);
-    param.set(string, command!, args, cmd.defaultSize(command!), cmd.signed());
+    param.set(string, mnemo, args, cmd.defaultSize(mnemo), cmd.signed());
     if (lastLabel !== null) param.label = lastLabel;
     for (const a of args) for (const label of a.usedLabels) result.usedLabels.add(label);
 
