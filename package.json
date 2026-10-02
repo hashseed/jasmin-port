@@ -23,7 +23,8 @@
     "format": "prettier --write .",
     "format:check": "prettier --check .",
     "help:index": "node scripts/help-pages.mjs",
-    "bench:browser": "node bench/browser-bench.mjs"
+    "bench:browser": "node bench/browser-bench.mjs",
+    "bench:samples": "node bench/samples.mjs"
   },
   "private": true,
   "packageManager": "npm@11.19.0",
