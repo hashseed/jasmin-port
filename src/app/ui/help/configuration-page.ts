@@ -58,7 +58,7 @@ export function parseSpinner(text: string, range: { min: number; max: number }):
 
 /**
  * The body of the Configuration page (`resources/Configuration.htm`, spec 02
- * §12.2): heading, the settings table with live controls, and the photo. Every
+ * §12.2): heading and the settings table with live controls. Every
  * change is saved at once; the theme and help language apply immediately, the
  * rest to documents opened afterwards (the editor font follows at once).
  */
@@ -130,23 +130,22 @@ export function parseSpinner(text: string, range: { min: number; max: number }):
         }
       </select>
     </div>
-    <img class="photo" src="images/jasmin2.jpg" width="1920" height="1084" alt="" loading="lazy" />
   `,
   styles: `
     :host {
       display: block;
     }
     h1 {
-      margin: 40px 0 var(--space-4);
-      color: var(--help-heading);
-      font-size: 28px;
+      margin: 0 0 var(--space-3);
+      font-size: 15px;
+      font-weight: 600;
     }
     .config {
       display: grid;
       grid-template-columns: 1fr 1fr;
       gap: var(--space-1) var(--space-6, 24px);
-      padding: 20px 10%;
-      border: 3px solid color-mix(in srgb, var(--help-link) 30%, transparent);
+      padding: var(--space-3) var(--space-4) var(--space-4);
+      border: 1px solid var(--border);
       border-radius: var(--radius);
       font-size: 13px;
       text-align: left;
@@ -164,12 +163,6 @@ export function parseSpinner(text: string, range: { min: number; max: number }):
       background: var(--bg-panel);
       color: var(--text);
       font: inherit;
-    }
-    .photo {
-      max-width: 100%;
-      height: auto;
-      margin-top: var(--space-4);
-      border-radius: var(--radius);
     }
   `,
 })
