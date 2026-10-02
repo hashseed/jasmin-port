@@ -34,16 +34,14 @@ import { WelcomePage } from './welcome-page';
         <a href="#new" (click)="run($event, 'new')">New File</a>
         | <a href="#openFile" (click)="run($event, 'open')">Open File</a>
         @if (page === 'welcome') {
-          | <a href="Configuration.htm" (click)="go($event, 'configuration')">Configuration</a> |
-          <a href="#credits" (click)="go($event, 'welcome', 'credits')">Credits</a>
+          | <a href="Configuration.htm" (click)="go($event, 'configuration')">Configuration</a>
         } @else {
-          | <a href="Welcome.htm" (click)="go($event, 'welcome')">Welcome Page</a> |
-          <a href="Welcome.htm#credits" (click)="go($event, 'welcome', 'credits')">Credits</a>
+          | <a href="Welcome.htm" (click)="go($event, 'welcome')">Welcome Page</a>
         }
       </nav>
       @switch (page) {
         @case ('welcome') {
-          <app-welcome-page [idPrefix]="help().id" />
+          <app-welcome-page />
         }
         @case ('configuration') {
           @defer (on immediate) {

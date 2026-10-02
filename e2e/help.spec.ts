@@ -69,12 +69,18 @@ test.describe('help tabs (spec 02 §12)', () => {
     );
   });
 
-  test('Welcome shows the credits with a port line', async ({ page }) => {
+  test('Welcome shows the version and links both repositories, without credits', async ({
+    page,
+  }) => {
     await page.goto('/');
     const welcome = page.locator('app-help-view');
-    await expect(welcome).toContainText('Version 1.5.11 (2016-10-28)');
-    await expect(welcome).toContainText(`Web port: version ${version}.`);
-    await expect(welcome).toContainText('Lehrstuhl für Rechnertechnik und Rechnerorganisation');
+    await expect(welcome).toContainText(`Version ${version}, ported from Jasmin 1.5.11`);
+    await expect(helpLinks(page).getByRole('link')).toHaveText([
+      'New File',
+      'Open File',
+      'Configuration',
+    ]);
+    await expect(welcome.getByRole('heading', { name: 'Credits' })).toHaveCount(0);
     await expect(
       welcome.getByRole('link', { name: 'github.com/hashseed/jasmin-port' }),
     ).toHaveAttribute('href', 'https://github.com/hashseed/jasmin-port');
@@ -82,8 +88,6 @@ test.describe('help tabs (spec 02 §12)', () => {
       'href',
       'https://github.com/TUM-LRR/Jasmin',
     );
-    await helpLinks(page).getByRole('link', { name: 'Credits' }).click();
-    await expect(welcome.locator('[data-anchor="credits"]')).toBeInViewport();
   });
 
   test('links navigate within the tab; Back and Forward follow its history', async ({ page }) => {
@@ -108,9 +112,9 @@ test.describe('help tabs (spec 02 §12)', () => {
     await forward.click();
     await expect(page.getByRole('heading', { name: 'Configuration' })).toBeVisible();
 
-    // Credits on the Configuration page goes to Welcome.htm#credits.
-    await helpLinks(page).getByRole('link', { name: 'Credits' }).click();
-    await expect(page.locator('[data-anchor="credits"]')).toBeInViewport();
+    // Welcome Page on the Configuration page goes back to Welcome.
+    await helpLinks(page).getByRole('link', { name: 'Welcome Page' }).click();
+    await expect(page.getByRole('heading', { name: 'Getting started' })).toBeVisible();
     await back.click();
     await expect(page.getByRole('heading', { name: 'Configuration' })).toBeVisible();
 
