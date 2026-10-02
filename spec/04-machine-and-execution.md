@@ -222,7 +222,14 @@ the ignored first one and breakpoints set during the run), the same error lines 
 messages (07 Q-E-1), `JASMINSLEEP` delays, and addresses computed on every execution
 (07 Q-I-18). Compiled code checks a line budget at every jump, so Pause and the live
 panel refreshes keep working in tight loops, and whenever Run yields, the state is
-exactly that of the lines executed so far.
+exactly that of the lines executed so far. Inside compiled code the general registers
+(EAX..EBP, including their 16- and 8-bit parts) live in JavaScript locals; they and
+their change stamps are written back whenever the compiled code returns (budget used
+up, breakpoint, jump out of the compiled lines, error, `JASMINSLEEP`), before every
+instruction that runs through the generic path (and loaded again after it), and before
+every memory access that notifies a memory listener (an I/O device), so no
+instruction, listener, panel or Pause ever sees a stale register, also when a listener
+throws.
 
 ### 9.4 Execute current line (F9, toolbar)
 Parses and executes the line containing the caret, independent of EIP. EIP is not

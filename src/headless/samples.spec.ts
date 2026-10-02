@@ -1,7 +1,15 @@
 import { readFileSync, readdirSync } from 'node:fs';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { DataSpace, Interpreter, Program, machineStateOf, type MachineState } from '../app/core';
+import {
+  DataSpace,
+  Interpreter,
+  Program,
+  machineStateOf,
+  serializeSnapshot,
+  takeSnapshot,
+  type MachineState,
+} from '../app/core';
 import { ALGORITHM_SAMPLES, SAMPLES } from '../app/samples';
 
 const samples = join(__dirname, '../../public/samples');
@@ -137,5 +145,44 @@ describe('samples', () => {
       [0, ...start.slice(0, 15)].map((r) => r << 1),
     );
     expect(rows(runUntilSleeps('life.asm', 64))).toEqual(start);
+  });
+});
+
+/** Everything Run leaves behind: the snapshot and which register parts are marked changed. */
+function runState(dsp: DataSpace): string {
+  const stamps = dsp.registerSets.flatMap((set) =>
+    [set.L, set.H, set.X, set.E].map((a) => (a ? `${dsp.isDirty(a, 0)}${dsp.isDirty(a, 1)}` : '')),
+  );
+  return JSON.stringify({ snapshot: serializeSnapshot(takeSnapshot(dsp)), stamps });
+}
+
+describe('compiled Run (spec 04 §9.3 port note)', () => {
+  const files = [
+    ...readdirSync(programs).map((f) => join(programs, f)),
+    ...readdirSync(samples).map((f) => join(samples, f)),
+  ].filter((f) => f.endsWith('.asm'));
+
+  it.each(files)('runs %s as the plain loop does', (file) => {
+    const source = readFileSync(file, 'utf8');
+    for (const budget of [1000, 7]) {
+      const machines = [false, true].map((compiled) => {
+        const dsp = new DataSpace(4096, 0);
+        const program = new Program(dsp);
+        program.setText(source);
+        const interpreter = new Interpreter(dsp, program);
+        interpreter.useCompiledCode = compiled;
+        interpreter.beginRun(() => false);
+        return { dsp, interpreter };
+      });
+      for (let batch = 0; batch < 300; batch++) {
+        const [plain, fast] = machines.map(({ interpreter }) => {
+          const outcome = interpreter.runSteps(budget, () => false);
+          return outcome.kind === 'error' ? { ...outcome, error: outcome.error.errorMsg } : outcome;
+        });
+        expect(fast).toEqual(plain);
+        expect(runState(machines[1].dsp)).toBe(runState(machines[0].dsp));
+        if (plain.kind !== 'continue' && plain.kind !== 'sleep') break;
+      }
+    }
   });
 });
