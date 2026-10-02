@@ -1,11 +1,13 @@
 name: Deploy to GitHub Pages
 
-# Optional and manual: builds the static site and publishes it with GitHub Pages.
-# Before the first run, enable Pages for the repository with "GitHub Actions" as
+# Builds the static site and publishes it with GitHub Pages on every push to main
+# (and on demand). Before the first run, enable Pages for the repository with "GitHub Actions" as
 # the source (Settings > Pages; a private repository needs a paid plan). The site is
 # served from https://<owner>.github.io/<repository>/, so the base href is the
 # repository name; change BASE_HREF for a custom domain (use "/").
 on:
+  push:
+    branches: [main]
   workflow_dispatch:
 
 permissions:

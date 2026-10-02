@@ -83,10 +83,10 @@ npm run build -- --base-href /some/path/   # for any other sub-path
 ```
 
 Copy `dist/jasmin-port/browser/` to any static host. The app has no routes, so no
-rewrite rules are needed. Hosting is up to you; an optional, manually triggered
-GitHub Actions workflow ([`.github/workflows/pages.yml`](.github/workflows/pages.yml))
-builds and deploys to GitHub Pages once Pages is enabled for the repository (with
-"GitHub Actions" as the source; private repositories need a paid plan).
+rewrite rules are needed. The GitHub Actions workflow
+[`.github/workflows/pages.yml`](.github/workflows/pages.yml) deploys every push to
+`main` to GitHub Pages at https://hashseed.github.io/jasmin-port/ (Pages must be
+enabled with "GitHub Actions" as the source; private repositories need a paid plan).
 
 ## Development
 

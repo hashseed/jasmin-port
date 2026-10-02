@@ -1,4 +1,5 @@
 import { expect, test } from '@playwright/test';
+import { setProgram } from './helpers';
 
 test('the shell renders with the Jasmin title, menus and Welcome tab', async ({ page }) => {
   await page.goto('/');
@@ -6,6 +7,17 @@ test('the shell renders with the Jasmin title, menus and Welcome tab', async ({ 
   await expect(page.getByRole('navigation', { name: 'Main menu' })).toHaveText(/File\s*Edit\s*Run/);
   await expect(page.getByRole('tab', { name: 'Welcome' })).toHaveAttribute('aria-selected', 'true');
   await expect(page.getByRole('toolbar', { name: 'Toolbar' }).getByRole('button')).toHaveCount(17);
+});
+
+test('the top right links to the source on GitHub', async ({ page }) => {
+  await page.goto('/');
+  const link = page.getByRole('link', { name: 'Source code on GitHub' });
+  await expect(link).toHaveAttribute('href', 'https://github.com/hashseed/jasmin-port');
+  await expect(link).toHaveAttribute('target', '_blank');
+  const box = await link.boundingBox();
+  const width = page.viewportSize()!.width;
+  expect(box!.x + box!.width).toBeGreaterThan(width - 40);
+  expect(box!.y).toBeLessThan(40);
 });
 
 test('toolbar tooltips keep the original texts plus the shortcut', async ({ page }) => {
@@ -73,7 +85,7 @@ test('Step, Run, Pause and Reset drive the document session', async ({ page }) =
   await page.keyboard.press('Alt+n');
   const registers = page.getByRole('region', { name: 'Registers', exact: true });
   const register = (name: string) => registers.getByRole('textbox', { name, exact: true });
-  await page.getByLabel('Program code').fill('mov eax, 4\nmov ebx, 6');
+  await setProgram(page, 'mov eax, 4\nmov ebx, 6');
   await page.keyboard.press('F7');
   await expect(register('EAX')).toHaveValue('4');
   await expect(register('EIP')).toHaveValue('1');
