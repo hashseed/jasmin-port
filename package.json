@@ -15,6 +15,7 @@
     "test": "npm run test:core && npm run test:ui",
     "test:core": "vitest run --config vitest.core.config.ts",
     "test:ui": "ng test --watch=false",
+    "bench": "bash bench/run-bench.sh",
     "conformance": "npm run build:headless && JASMIN_TS_RUNNER='node dist/headless/run.js' bash spec/conformance/run-conformance.sh ts",
     "e2e": "playwright test",
     "lint": "ng lint",
