@@ -79,6 +79,15 @@ describe('WorkspaceService', () => {
     expect(help.title).toBe('Welcome');
   });
 
+  it('renames a document with a trimmed, non-empty name (port addition)', () => {
+    const doc = workspace.newDocument();
+    expect(doc.rename('  loop demo  ')).toBe(true);
+    expect(doc.title()).toBe('loop demo');
+    expect(doc.rename('   ')).toBe(false);
+    expect(doc.rename('')).toBe(false);
+    expect(doc.title()).toBe('loop demo');
+  });
+
   it('tracks unsaved edits per document (port addition)', () => {
     const a = workspace.newDocument();
     const b = workspace.newDocument();

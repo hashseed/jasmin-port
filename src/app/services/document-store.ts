@@ -98,6 +98,17 @@ export class DocumentStore {
     this.versionState.update((v) => v + 1);
   }
 
+  /**
+   * Renames the document (tab rename, port addition). The name is trimmed; an empty
+   * name is rejected and the title kept. Returns whether the title was set.
+   */
+  rename(name: string): boolean {
+    const trimmed = name.trim();
+    if (trimmed === '') return false;
+    this.title.set(trimmed);
+    return true;
+  }
+
   /** Records `text` (by default the current text) as the file's content after Open or Save Code. */
   markSaved(text = this.text()): void {
     this.savedText.set(text);
