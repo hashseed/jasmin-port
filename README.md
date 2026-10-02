@@ -195,7 +195,7 @@ Technische Universität München. Initial development by Yang Guo, Jakob Kummero
 Orend and Stefanie Schmid; initial documentation and tutorials by André Aichert,
 Mattias Kaiser and Sebastian Ullherr; maintained by Marcel Meyer, with additional
 credits to Johannes Roith and Alexander Ried. The port reuses the original's help
-pages, logo and photos ([public/NOTICE.txt](public/NOTICE.txt)).
+pages, and its logo for the browser tab icon ([public/NOTICE.txt](public/NOTICE.txt)).
 
 The port uses [Angular](https://angular.dev), [CodeMirror](https://codemirror.net),
 [Lucide](https://lucide.dev) icons (ISC) and the [Inter](https://rsms.me/inter/) and

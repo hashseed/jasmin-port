@@ -19,101 +19,118 @@ const CREDITS: readonly { readonly heading: string; readonly names: readonly str
 ];
 
 /**
- * The body of the Welcome page (`resources/Welcome.htm`, spec 02 §12.1) below the
- * shared header: the bug-report line (pointing to the port's issue tracker, spec
- * 09 §5), the photo and the credits block with a line for the web port.
+ * The body of the Welcome page (spec 02 §12.1, port note): a short getting-started
+ * tutorial, links to the port's and the original's repositories, and the credits
+ * (anchor `credits`) with a line for the web port.
  */
 @Component({
   selector: 'app-welcome-page',
   changeDetection: ChangeDetectionStrategy.OnPush,
   template: `
-    <p class="bug">
-      <i>
-        <span class="blue">Think you found a bug? Tell us at </span>
-        <a [href]="portUrl + '/issues'" target="_blank" rel="noopener">{{ portIssues }}</a>
-        <span class="blue"> or create a pull request on GitHub.</span>
-      </i>
-    </p>
-    <img class="photo" src="images/jasmin.jpg" width="800" height="600" alt="" />
+    <section>
+      <h2>Getting started</h2>
+      <ol>
+        <li>Open a new document with <em>New File</em> (Alt+N).</li>
+        <li>
+          Type a program, one instruction per line, for example
+          <code>mov eax, 5</code> and <code>add eax, 7</code>.
+        </li>
+        <li>
+          Press F7 to step through it line by line, or F5 to run it. Registers, flags and memory
+          update as it goes; values that just changed are bold.
+        </li>
+        <li>Click a line number to set a breakpoint, and Reset to start over.</li>
+        <li>The Help tab below the editor explains the instruction under the cursor.</li>
+      </ol>
+    </section>
+
+    <section>
+      <h2>Source</h2>
+      <p>
+        This web port is open source at
+        <a [href]="portUrl" target="_blank" rel="noopener">{{ portRepo }}</a
+        >. Found a bug?
+        <a [href]="portUrl + '/issues'" target="_blank" rel="noopener">Open an issue</a>
+        or send a pull request.
+      </p>
+      <p>
+        The original Java version is at
+        <a href="https://github.com/TUM-LRR/Jasmin" target="_blank" rel="noopener"
+          >github.com/TUM-LRR/Jasmin</a
+        >.
+      </p>
+    </section>
 
     <section class="credits" [id]="idPrefix() + '-credits'" data-anchor="credits">
-      <div class="copyright">© 2006 - 2017</div>
-      <div>
-        <p>
-          Lehrstuhl für Rechnertechnik und Rechnerorganisation<br />
-          Technische Universität München<br />
-          Prof. Dr. M. Schulz<br />
-          <a href="https://github.com/TUM-LRR/Jasmin" target="_blank" rel="noopener"
-            >https://github.com/TUM-LRR/Jasmin</a
-          >
-        </p>
-        <p>Version 1.5.11 <small>(2016-10-28)</small></p>
-        <p class="port">
-          Web port: version {{ portVersion }},
-          <a [href]="portUrl" target="_blank" rel="noopener">{{ portUrl }}</a>
-        </p>
+      <h2>Credits</h2>
+      <p>
+        © 2006 - 2017 Lehrstuhl für Rechnertechnik und Rechnerorganisation, Technische Universität
+        München, Prof. Dr. M. Schulz. Version 1.5.11 (2016-10-28).
+      </p>
+      <p>Web port: version {{ portVersion }}.</p>
+      <dl>
         @for (group of credits; track group.heading) {
-          <p class="group">{{ group.heading }}</p>
-          <ul class="authors">
-            @for (name of group.names; track name) {
-              <li>{{ name }}</li>
-            }
-          </ul>
+          <dt>{{ group.heading }}</dt>
+          <dd>{{ group.names.join(', ') }}</dd>
         }
-      </div>
+      </dl>
     </section>
   `,
   styles: `
     :host {
       display: block;
     }
-    .blue,
-    .authors {
-      color: var(--help-blue);
+    section + section {
+      margin-top: 28px;
+    }
+    h2 {
+      margin: 0 0 var(--space-2);
+      font-size: 15px;
+      font-weight: 600;
+    }
+    p {
+      margin: 0 0 var(--space-2);
+    }
+    ol {
+      margin: 0;
+      padding-left: 1.4em;
+    }
+    li + li {
+      margin-top: var(--space-1);
+    }
+    code {
+      font-family: var(--font-mono);
+      font-size: 13px;
     }
     a {
       color: var(--help-link);
-      font-weight: 700;
+      font-weight: 500;
       text-decoration: none;
     }
-    .photo {
-      max-width: 100%;
-      height: auto;
-      margin-top: var(--space-1);
-      border-radius: var(--radius);
+    a:hover {
+      text-decoration: underline;
     }
     .credits {
-      display: grid;
-      grid-template-columns: 25% 1fr;
-      gap: var(--space-2);
-      margin-top: var(--space-4);
-      text-align: left;
+      color: var(--text-muted);
+      font-size: 13px;
       scroll-margin-top: var(--space-4);
     }
-    .copyright {
-      text-align: right;
+    dl {
+      display: grid;
+      grid-template-columns: max-content 1fr;
+      gap: 2px var(--space-3);
+      margin: var(--space-2) 0 0;
     }
-    .credits p {
-      margin: 0 0 var(--space-4);
-    }
-    .credits .group {
+    dd {
       margin: 0;
     }
-    @media (max-width: 799px) {
-      .credits {
+    @media (max-width: 499px) {
+      dl {
         grid-template-columns: 1fr;
-        text-align: center;
       }
-      .copyright {
-        text-align: center;
+      dd {
+        margin-bottom: var(--space-1);
       }
-    }
-    .authors {
-      display: grid;
-      grid-template-columns: 1fr 1fr;
-      margin: 0 0 var(--space-4);
-      padding: 0;
-      list-style: none;
     }
   `,
 })
@@ -122,5 +139,5 @@ export class WelcomePage {
   protected readonly credits = CREDITS;
   protected readonly portVersion = PORT_VERSION;
   protected readonly portUrl = PORT_URL;
-  protected readonly portIssues = PORT_URL.replace('https://', '') + '/issues';
+  protected readonly portRepo = PORT_URL.replace('https://', '');
 }

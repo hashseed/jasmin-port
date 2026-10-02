@@ -14,25 +14,15 @@
 //
 // The pages and images are GPL-2.0 like the rest of Jasmin (spec 09 §5, LICENSE.md).
 
-import {
-  copyFileSync,
-  existsSync,
-  mkdirSync,
-  readFileSync,
-  readdirSync,
-  writeFileSync,
-} from 'node:fs';
+import { existsSync, mkdirSync, readFileSync, readdirSync, writeFileSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const helpDir = join(root, 'public', 'help');
-const imageDir = join(root, 'public', 'images');
 
 /** Pages whose `CX` means the loop counter, which is ECX (07 Q-I-14). */
 const ECX_PAGES = ['LOOP.htm', 'LOOPE.htm', 'LOOPZ.htm', 'LOOPNE.htm', 'LOOPNZ.htm'];
-/** Images of the Welcome and Configuration pages (spec 09 §1.2). */
-const IMAGES = ['jasmin_logo.png', 'jasmin.jpg', 'jasmin2.jpg'];
 
 function json(value) {
   return JSON.stringify(value, null, 2) + '\n';
@@ -78,9 +68,6 @@ function importUpstream(upstream) {
       writeFileSync(join(target, name), text, 'latin1');
     }
   }
-  mkdirSync(imageDir, { recursive: true });
-  const resources = join(upstream, 'src', 'jasmin', 'gui', 'resources');
-  for (const name of IMAGES) copyFileSync(join(resources, name), join(imageDir, name));
 }
 
 const args = process.argv.slice(2);
