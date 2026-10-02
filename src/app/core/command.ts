@@ -13,6 +13,13 @@ export type CommandKind = 'normal' | 'pseudo' | 'preproc';
  * Base class of every instruction (port of `JasminCommand`). One instance per
  * document, bound to that document's machine.
  */
+/** 1 where a byte has an even number of set bits (PF). */
+const EVEN_PARITY = Uint8Array.from({ length: 256 }, (_, v) => {
+  let ones = 0;
+  for (let i = 0; i < 8; i++) ones += (v >> i) & 1;
+  return ones % 2 === 0 ? 1 : 0;
+});
+
 export abstract class Command {
   /** Mnemonics this class implements. */
   abstract readonly mnemonics: readonly string[];
@@ -56,13 +63,38 @@ export abstract class Command {
   protected setFlags(p: Parameters, flags: number, subtrahend?: bigint): void {
     const bits = p.size * 8;
     const d = this.dsp;
+    if (bits > 32) {
+      this.setFlagsLong(p, flags, subtrahend);
+      return;
+    }
+    // Operands of at most 32 bits: only bits 0..bits of the 64-bit values matter, so
+    // convert them to numbers once (exact up to 2^53) instead of shifting bigints.
+    const r = Number(BigInt.asUintN(bits + 1, p.result));
+    const signBit = 2 ** (bits - 1);
+    if (flags & Flag.ZF) d.fZero = r % (signBit * 2) === 0;
+    if (flags & Flag.SF) d.fSign = Math.floor(r / signBit) % 2 === 1;
+    if (flags & Flag.PF) d.fParity = EVEN_PARITY[r & 0xff] === 1;
+    if (flags & Flag.CF) d.fCarry = r >= signBit * 2;
+    if (flags & Flag.OF) {
+      const aSign = Number(BigInt.asUintN(bits, p.a)) >= signBit;
+      const bSign = Number(BigInt.asUintN(bits, p.b)) >= signBit;
+      const resultSign = Math.floor(r / signBit) % 2 === 1;
+      d.fOverflow = aSign === bSign && resultSign !== aSign;
+    }
+    if (flags & Flag.AF) {
+      // Carry or borrow out of bit 3 (07 Q-F-1): bit 4 of a ^ b ^ result.
+      const b = Number(BigInt.asUintN(5, subtrahend ?? p.b));
+      d.fAuxiliary = ((Number(BigInt.asUintN(5, p.a)) ^ b ^ (r & 0x1f)) & 0x10) !== 0;
+    }
+  }
+
+  /** `setFlags` for 64-bit operands, on bigints as in the original. */
+  private setFlagsLong(p: Parameters, flags: number, subtrahend?: bigint): void {
+    const bits = p.size * 8;
+    const d = this.dsp;
     if (flags & Flag.ZF) d.fZero = long(p.result & sizeMask(p.size)) === 0n;
     if (flags & Flag.SF) d.fSign = (shr(p.result, bits - 1) & 1n) === 1n;
-    if (flags & Flag.PF) {
-      let ones = 0;
-      for (let i = 0; i < 8; i++) ones += Number(shr(p.result, i) & 1n);
-      d.fParity = ones % 2 === 0;
-    }
+    if (flags & Flag.PF) d.fParity = EVEN_PARITY[Number(p.result & 0xffn)] === 1;
     if (flags & Flag.CF) d.fCarry = (shr(p.result, bits) & 1n) === 1n;
     if (flags & Flag.OF) {
       const aSign = (shr(p.a, bits - 1) & 1n) === 1n;
@@ -71,7 +103,6 @@ export abstract class Command {
       d.fOverflow = aSign === bSign && resultSign !== aSign;
     }
     if (flags & Flag.AF) {
-      // Carry or borrow out of bit 3 (07 Q-F-1): bit 4 of a ^ b ^ result.
       const b = subtrahend ?? p.b;
       d.fAuxiliary = (shr(p.a ^ b ^ p.result, 4) & 1n) === 1n;
     }
