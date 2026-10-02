@@ -1,4 +1,5 @@
 import { Page, expect, test } from '@playwright/test';
+import { setProgram } from './helpers';
 
 /**
  * The enablement table of spec 02 §4 (MainFrame.checkButtonStates) with 07
@@ -173,7 +174,7 @@ test.describe('enablement (spec 02 §4)', () => {
   test('Ctrl+P pauses and Stop works while running', async ({ page }) => {
     await page.goto('/');
     await page.keyboard.press('Alt+n');
-    await page.getByLabel('Program code').fill(ENDLESS);
+    await setProgram(page, ENDLESS);
     const runPause = page.getByRole('toolbar').locator('[data-action="runPause"]');
     await runPause.click();
     await expect(runPause).toHaveClass(/running/);
