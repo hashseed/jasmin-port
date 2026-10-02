@@ -31,6 +31,13 @@ test.describe('performance (docs/plan.md M9)', () => {
     await runButton(page).click();
     await expect(runButton(page)).toHaveClass(/running/);
 
+    // The registers follow the run while it is in progress.
+    const first = Number(await eaxField(page).inputValue());
+    await expect
+      .poll(async () => Number(await eaxField(page).inputValue()), { timeout: 2_000 })
+      .toBeGreaterThan(first);
+    await expect(runButton(page)).toHaveClass(/running/);
+
     // The main thread keeps getting turns: timers fire close to on time.
     const lag = await page.evaluate(async () => {
       const worst: number[] = [];
