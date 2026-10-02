@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { isSpecialized } from './compiled-run';
+import { compileRegion, isSpecialized } from './compiled-run';
 import { DataSpace } from './data-space';
 import { Interpreter, RunOutcome } from './interpreter';
 import { MemoryRange } from './memory';
@@ -84,6 +84,19 @@ function compare(
   fast.interpreter.endRun();
   expect(observable(fast)).toBe(observable(plain));
   return { fast, plain, outcomes };
+}
+
+/** EAX..EBP and the change stamps of their parts (not EIP). */
+function generalRegisters(m: Machine): string {
+  const { dsp } = m;
+  return dsp.registerSets
+    .slice(0, 8)
+    .map((set) =>
+      [set.E, set.X, set.H, set.L]
+        .map((a) => (a ? `${dsp.registers.get(a)}:${dsp.isDirty(a, 0)}${dsp.isDirty(a, 1)}` : ''))
+        .join(' '),
+    )
+    .join(', ');
 }
 
 const reg = (m: Machine, name: string) => m.dsp.registers.get(m.dsp.getRegisterArgument(name)!);
@@ -197,6 +210,25 @@ describe('compiled Run (spec 04 §9.3 port note)', () => {
       const { fast, outcomes } = compare(source, budgets, new Set(), 1000);
       expect(outcomes.at(-1)).toEqual({ kind: 'end' });
       expect(fast.interpreter.runStats.regions).toBeGreaterThan(4);
+    }
+  });
+
+  it('keeps registers in V in long regions with many lines that call execute', () => {
+    const registers = ['eax', 'ebx', 'edx', 'esi', 'edi', 'ebp'];
+    const pairs = (count: number) =>
+      Array.from(
+        { length: count },
+        (_, k) => `add ${registers[k % 6]}, ${k + 1}\nshl ${registers[(k + 1) % 6]}, 1`,
+      ).join('\n');
+    const regionSource = (count: number) => {
+      const m = machine(`top: ${pairs(count)}\ndec ecx\njnz top`, true);
+      const lines = m.program.results;
+      return compileRegion(m.dsp, lines, 0, lines.length - 1, () => false).source;
+    };
+    expect(regionSource(10)).toContain('r0 = V[0] | 0;');
+    expect(regionSource(98)).not.toContain('r0 = V[0] | 0;');
+    for (const budgets of [[1000], [37, 400]]) {
+      compare(`mov ecx, 5\ntop: ${pairs(98)}\ndec ecx\njnz top`, budgets, new Set(), 1000);
     }
   });
 
@@ -333,4 +365,261 @@ describe('compiled Run (spec 04 §9.3 port note)', () => {
     const { compiled, interpreted } = fast.interpreter.runStats;
     expect(compiled / (compiled + interpreted)).toBeGreaterThan(0.5);
   });
+
+  it('keeps the general registers in locals and writes them back once per exit', () => {
+    const m = machine(BUBBLESORT, true);
+    const lines = m.program.results;
+    const source = compileRegion(m.dsp, lines, 0, lines.length - 1, () => false).source;
+    // No register value or stamp is written inline, only on write-back (with `m`).
+    expect(source).not.toMatch(/V\[[0-7]\] = (?!r)/);
+    expect(source).not.toMatch(/RD\[[0-7]\] = R\.stamp; RM\[[0-7]\] = -?\d/);
+    expect(source).toContain('if (m0 !== 0) { V[0] = r0; RD[0] = R.stamp; RM[0] = m0; m0 = 0; }');
+    expect(source).toContain('r1 = V[1] | 0;');
+  });
+
+  it('writes registers and their stamps back when the budget runs out (Pause)', () => {
+    // A tight endless loop over all sizes: every batch stops inside the compiled loop.
+    const source = `top: add eax, 3
+  mov bl, al
+  mov bh, 7
+  add cx, 513
+  sub edx, eax
+  mov si, cx
+  lea edi, [eax+ecx*2+1]
+  push ebx
+  pop ebp
+  jmp top`;
+    for (const budgets of [[1], [2, 3, 5], [7, 11], [10, 13], [997]]) {
+      const { fast, outcomes } = compare(source, budgets, new Set(), 60);
+      expect(outcomes.every((o) => o.kind === 'continue')).toBe(true);
+      // Entering the loop needs room for its 10 lines.
+      if (budgets[0] >= 10) expect(fast.interpreter.runStats.compiled).toBeGreaterThan(0);
+    }
+    // Exact state after a partial iteration, without comparing to the plain loop.
+    const m = machine(source, true);
+    const isBreakpoint = () => false;
+    m.interpreter.beginRun(isBreakpoint);
+    m.interpreter.runSteps(10 * 100 + 2, isBreakpoint);
+    expect(m.dsp.getInstructionPointer()).toBe(2);
+    expect(reg(m, 'EAX')).toBe(101 * 3);
+    expect(reg(m, 'BX')).toBe((7 << 8) | ((101 * 3) % 256));
+    expect(reg(m, 'CX')).toBe((100 * 513) % 65536);
+    expect(m.dsp.isDirty(m.dsp.getRegisterArgument('BL')!, 0)).toBe(true);
+    expect(m.dsp.isDirty(m.dsp.getRegisterArgument('BH')!, 0)).toBe(false);
+    expect(m.dsp.isDirty(m.dsp.getRegisterArgument('EBX')!, 0)).toBe(false);
+  });
+
+  it('writes registers back on a jump out of the region and at a breakpoint', () => {
+    // `far` is not parsed when the loop is compiled, so the jump to it leaves the region.
+    const source = `
+  mov ecx, 40
+top:
+  add eax, ecx
+  mov dh, cl
+  dec ecx
+  jnz top
+  jmp far
+  nop
+far:
+  mov ebx, eax
+  add bl, dh
+  mov ecx, 3
+  jmp top`;
+    for (const budgets of [[1000], [5, 9]]) compare(source, budgets, new Set(), 200);
+    // Breakpoints inside, at the end of, and after the compiled loop.
+    for (const line of [3, 5, 9, 10]) {
+      for (const budgets of [[1000], [4, 17]]) {
+        const { outcomes } = compare(source, budgets, new Set([line]), 200);
+        expect(outcomes.at(-1)).toEqual({ kind: 'breakpoint', line });
+      }
+    }
+  });
+
+  it('keeps sub-registers and instructions that call execute coherent', () => {
+    // IMUL, SHL, XCHG, MOVZX, SETcc, CMOVcc, MUL and DIV read and write registers
+    // through DataSpace between lines that keep them in locals.
+    const source = `
+  mov ecx, 300
+  mov esp, 2000
+top:
+  mov al, cl
+  add ah, al
+  imul ebx, ecx, 3
+  add bx, ax
+  shl edx, 1
+  xor dl, bh
+  xchg al, dh
+  movzx esi, dx
+  add esi, 1
+  setc ch
+  cmovs edi, esi
+  add di, si
+  push ax
+  push edi
+  pop eax
+  pop bp
+  mov ebp, eax
+  mul bl
+  add eax, ebp
+  mov ebx, 7
+  xor edx, edx
+  div ebx
+  add edx, eax
+  dec cx
+  jnz top`;
+    for (const budgets of [[1], [3, 7], [1000]]) {
+      const { outcomes } = compare(source, budgets, new Set(), 2000);
+      expect(outcomes.at(-1)).toEqual({ kind: 'end' });
+    }
+  });
+
+  it('writes registers back when a memory listener throws mid-region', () => {
+    const source = 'top: add eax, 3\nmov bl, al\nmov [ecx*4+100], eax\ninc ecx\njmp top';
+    const results = [false, true].map((compiled) => {
+      const m = machine(source, compiled);
+      m.dsp.memory.addListener(
+        (address) => {
+          if (address === 300) throw new Error('device fault');
+        },
+        [{ start: 300, end: 301 }],
+      );
+      const isBreakpoint = () => false;
+      m.interpreter.beginRun(isBreakpoint);
+      expect(() => m.interpreter.runSteps(1000, isBreakpoint)).toThrow('device fault');
+      return m;
+    });
+    expect(reg(results[1], 'EAX')).toBe(51 * 3);
+    // The run threw from the compiled loop (no statistics: `runSteps` did not return).
+    const regions = (results[1].interpreter as unknown as { regions: unknown[] }).regions;
+    expect(regions[2]).toBeDefined();
+    expect(generalRegisters(results[1])).toBe(generalRegisters(results[0]));
+  });
+
+  it('matches the plain loop on random programs (differential fuzzer)', () => {
+    // FUZZ_RUNS and FUZZ_BATCHES scale it up (e.g. FUZZ_RUNS=5000 FUZZ_BATCHES=400; hence
+    // the long timeout), FUZZ_SEED picks other programs.
+    const env = (globalThis as { process?: { env: Record<string, string | undefined> } }).process
+      ?.env;
+    const runs = Number(env?.['FUZZ_RUNS'] ?? 120);
+    const batches = Number(env?.['FUZZ_BATCHES'] ?? 40);
+    const seed = Number(env?.['FUZZ_SEED'] ?? 1);
+    let state = seed >>> 0 || 1;
+    const random = (n: number) => {
+      // xorshift32
+      state ^= state << 13;
+      state ^= state >>> 17;
+      state ^= state << 5;
+      return (state >>> 0) % n;
+    };
+    const pick = <T>(items: readonly T[]) => items[random(items.length)];
+    let compiled = 0;
+    for (let run = 0; run < runs; run++) {
+      const source = randomProgram(random, pick);
+      const lines = source.split('\n').length;
+      const breakpoints = new Set<number>();
+      for (let k = random(4) === 0 ? 1 + random(2) : 0; k > 0; k--) {
+        breakpoints.add(random(lines));
+      }
+      const budgets = [pick([1, 2, 3, 5, 13, 64, 1000]), pick([1, 7, 50, 333])];
+      try {
+        const { fast } = compare(source, budgets, breakpoints, batches);
+        compiled += fast.interpreter.runStats.compiled;
+      } catch (error) {
+        throw new Error(`seed ${seed}, run ${run}:\n${source}\n${String(error)}`, { cause: error });
+      }
+    }
+    expect(compiled).toBeGreaterThan(runs * 10);
+  }, 3_600_000);
 });
+
+const R32 = ['EAX', 'EBX', 'ECX', 'EDX', 'ESI', 'EDI', 'EBP'];
+const R16 = ['AX', 'BX', 'CX', 'DX', 'SI', 'DI', 'BP'];
+const R8 = ['AL', 'AH', 'BL', 'BH', 'CL', 'CH', 'DL', 'DH'];
+const SIZE = ['', 'byte', 'word', '', 'dword'];
+const CONDITIONS = ['z', 'nz', 'c', 'nc', 's', 'ns', 'l', 'ge', 'le', 'g', 'a', 'be', 'o', 'p'];
+
+/**
+ * A random program for the differential fuzzer: mostly instructions Run compiles
+ * to specialized code, on registers of every size and memory around EDI (in range
+ * until the program moves EDI away), with instructions that call `execute` in
+ * between, jumps anywhere (including endless loops) and a subroutine.
+ */
+function randomProgram(random: (n: number) => number, pick: <T>(items: readonly T[]) => T): string {
+  const length = 4 + random(24);
+  const labels = 1 + random(4);
+  const label = () => `L${random(labels)}`;
+  const register = (size: number) => pick(size === 4 ? R32 : size === 2 ? R16 : R8);
+  const memory = (size: number) => {
+    const offset = random(64) * pick([1, 2, 4]);
+    const index = random(3) === 0 ? `+${pick(['ecx', 'esi'])}*${pick([1, 2, 4])}` : '';
+    return `${SIZE[size]} [edi${index}+${offset}]`;
+  };
+  const operand = (size: number, memoryAllowed: boolean) =>
+    memoryAllowed && random(3) === 0 ? memory(size) : register(size);
+  const immediate = (size: number) =>
+    String(size === 4 ? random(140000) - 70000 : random(size === 2 ? 65536 : 256));
+  const lines = ['mov edi, 512', 'mov esp, 3000', `mov ecx, ${random(50)}`];
+  const placed = new Set<number>();
+  for (let k = 0; k < length; k++) {
+    if (random(4) === 0) {
+      const l = random(labels);
+      if (!placed.has(l)) {
+        placed.add(l);
+        lines.push(`L${l}:`);
+      }
+    }
+    const size = pick([1, 2, 4, 4, 4]);
+    const r = random(22);
+    if (r < 6) {
+      const op = pick(['mov', 'add', 'adc', 'sub', 'sbb', 'cmp', 'and', 'or', 'xor', 'test']);
+      const dest = operand(size, true);
+      const source = random(3) === 0 ? immediate(size) : operand(size, !dest.includes('['));
+      lines.push(`${op} ${dest}, ${source}`);
+    } else if (r < 8) {
+      lines.push(`${pick(['inc', 'dec', 'neg', 'not'])} ${operand(size, true)}`);
+    } else if (r < 9) {
+      lines.push(
+        `lea ${register(4)}, [${register(4)}+${register(4)}*${pick([1, 2, 4, 8])}+${random(99)}]`,
+      );
+    } else if (r < 10) {
+      const pushSize = pick([2, 4]);
+      lines.push(`push ${random(4) === 0 ? random(1000) : register(pushSize)}`);
+      lines.push(`pop ${register(pushSize)}`);
+    } else if (r < 11) {
+      lines.push(`push ${register(4)}`);
+    } else if (r < 12) {
+      lines.push(`pop ${register(pick([2, 4]))}`);
+    } else if (r < 14) {
+      lines.push(`j${pick([...CONDITIONS, 'mp'])} ${label()}`);
+    } else if (r < 15) {
+      lines.push(`${pick(['loop', 'loopne', 'loope', 'jecxz', 'jcxz'])} ${label()}`);
+    } else if (r < 16) {
+      lines.push('call sub');
+    } else if (r < 17) {
+      lines.push(`and edi, ${pick([1020, 2044, 508])}`);
+    } else {
+      // Instructions that call `execute`.
+      lines.push(
+        pick([
+          `imul ${register(4)}, ${register(4)}, ${random(100)}`,
+          `imul ${register(4)}, ${register(4)}`,
+          `shl ${register(size)}, ${random(8)}`,
+          `sar ${register(size)}, cl`,
+          `shr ${operand(size, true)}, 1`,
+          `xchg ${register(size)}, ${register(size)}`,
+          `movzx ${register(4)}, ${register(pick([1, 2]))}`,
+          `movsx ${register(4)}, ${register(pick([1, 2]))}`,
+          `set${pick(CONDITIONS)} ${register(1)}`,
+          `cmov${pick(CONDITIONS)} ${register(4)}, ${register(4)}`,
+          `mul ${register(size)}`,
+          `bswap ${register(4)}`,
+          `xadd ${register(size)}, ${register(size)}`,
+        ]),
+      );
+    }
+  }
+  for (let l = 0; l < labels; l++) if (!placed.has(l)) lines.push(`L${l}:`);
+  lines.push('jmp L0', 'sub:', `add ${register(4)}, ${random(9)}`);
+  lines.push(`mov ${register(1)}, ${register(1)}`, 'ret');
+  return lines.join('\n');
+}

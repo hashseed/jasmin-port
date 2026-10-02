@@ -48,7 +48,19 @@ import { RUNTIME_STACK_ERROR } from './parser';
  *   stamps get exactly the values `execute` would give them: the fast paths below
  *   inline `RegisterFile.setNum`, `Memory.setLittleEndian`, `DataSpace.getUpdateNum`
  *   and `DataSpace.setFlagsLazy` and fall back to the methods in every other case
- *   (bytes a memory listener watches, label markers, addresses out of range).
+ *   (bytes a memory listener watches, label markers, addresses out of range);
+ * - the general registers EAX..EBP that the specialized code uses live in locals
+ *   (`r0`..`r7`, int32) while the function runs, and the part each wrote last in
+ *   `m0`..`m7` (0: not written since the last write-back). They are loaded on
+ *   entry and written back with their change stamps (`RegisterFile.setNum` deferred:
+ *   the stamp does not move during a run) at every `return`, before every call of
+ *   `execute` (then loaded again: it may write any register) and before the memory
+ *   fallbacks (`getUpdateNum`, `putNum`), whose memory listeners may throw or look
+ *   at the registers. Nothing else the code calls can throw. A line writes back only
+ *   the locals that may be pending there (`dirtyLocals`), which keeps the code short;
+ *   a region whose code would still be too long for V8 to optimize keeps the
+ *   registers in `V` (`MAX_LOCALS_SOURCE`). (A `try`/`finally` around the loop would
+ *   be simpler but makes every `execute` call slower.)
  */
 export class CompiledRegion {
   /** The error of the last `run`, if it stopped on one, and its line. */
@@ -87,6 +99,14 @@ export interface RunLine {
 export const MAX_REGION_LINES = 200;
 
 /**
+ * Largest source of a region that keeps registers in locals. The write-back and
+ * reload around every line that calls `execute` make the code longer; past about
+ * 60 KB of bytecode (about as many characters of source) V8 no longer optimizes the
+ * function, so a region with many such lines keeps its registers in `V` instead.
+ */
+const MAX_LOCALS_SOURCE = 50_000;
+
+/**
  * Compiles lines `start..end` of `lines` (all in the cache). `isBreakpoint` tells
  * which lines the code must not run into.
  */
@@ -97,12 +117,15 @@ export function compileRegion(
   end: number,
   isBreakpoint: (line: number) => boolean,
 ): CompiledRegion {
-  return new RegionCompiler(dsp, lines, start, end, isBreakpoint).compile();
+  const region = new RegionCompiler(dsp, lines, start, end, isBreakpoint, true).compile();
+  if (region.source.length <= MAX_LOCALS_SOURCE) return region;
+  const plain = new RegionCompiler(dsp, lines, start, end, isBreakpoint, false).compile();
+  return plain.source.length < region.source.length ? plain : region;
 }
 
 /** Whether Run runs `line` as specialized code (for statistics and tests). */
 export function isSpecialized(dsp: DataSpace, line: RunLine): boolean {
-  return new RegionCompiler(dsp, [line], 0, 0, () => false).specialize(0, line) !== null;
+  return new RegionCompiler(dsp, [line], 0, 0, () => false, true).specialize(0, line) !== null;
 }
 
 /**
@@ -185,6 +208,17 @@ class RegionCompiler {
   private readonly cost: Int32Array;
   private readonly breakpoint: boolean[] = [];
   private enterableCache: Uint8Array | null = null;
+  /** General registers (0..7) the code keeps in locals, and those it writes. */
+  private readonly used = new Set<number>();
+  private readonly written = new Set<number>();
+  /** The line being compiled. */
+  private line = 0;
+  /** Per line: bit k if its code writes the local of register k. */
+  private readonly writes: Int32Array;
+  /** Per line: whether every local is written back after it (it calls `execute`). */
+  private readonly clean: Uint8Array;
+  /** Jumps that stay in the function (`continue`): [from, to] lines. */
+  private readonly edges: [number, number][] = [];
 
   constructor(
     private readonly dsp: DataSpace,
@@ -192,8 +226,12 @@ class RegionCompiler {
     private readonly start: number,
     private readonly end: number,
     isBreakpoint: (line: number) => boolean,
+    /** Whether EAX..EBP live in locals (see `CompiledRegion`), else in `V`. */
+    private readonly locals: boolean,
   ) {
     this.cost = new Int32Array(end - start + 1);
+    this.writes = new Int32Array(end - start + 1);
+    this.clean = new Uint8Array(end - start + 1);
     for (let line = start; line <= end; line++) this.breakpoint[line - start] = isBreakpoint(line);
   }
 
@@ -211,9 +249,14 @@ class RegionCompiler {
     for (let line = this.start; line <= this.end; line++) {
       const entry = this.lines[line]!;
       let result: LineCode = { code: '', jumps: false };
+      this.line = line;
       if (entry.command && entry.param) {
         const special = this.specialize(line, entry, previous);
         if (special) specialized++;
+        else {
+          this.writes[line - this.start] = 0;
+          this.clean[line - this.start] = 1;
+        }
         result = special ?? this.generic(line, entry.command, entry.param);
       }
       let body = result.code;
@@ -223,17 +266,40 @@ class RegionCompiler {
       if (!result.jumps && (line === this.end || this.isStop(line + 1))) {
         body += `n += ${line} - s + 1; V[8] = ${line + 1}; return n;\n`;
       }
-      cases.push(`case ${line}:\n${body}`);
+      // Every exit writes back the locals the line may have left pending.
+      cases.push(`case ${line}:\n${body.replaceAll('return ', `${this.writeBack('>')}return `)}`);
       previous = result.flags;
     }
     const region = new CompiledRegion(this.start, this.end, this.cost, specialized);
     const names = this.constants.map((_, i) => `k${i}`);
+    const used = [...this.used].sort((p, q) => p - q);
+    const written = [...this.written].sort((p, q) => p - q);
+    const load = used.map((k) => `r${k} = V[${k}] | 0;`).join(' ');
+    const writeBackOf = (registers: readonly number[]) =>
+      registers
+        .map(
+          (k) =>
+            `if (m${k} !== 0) { V[${k}] = r${k}; RD[${k}] = R.stamp; RM[${k}] = m${k}; m${k} = 0; }\n`,
+        )
+        .join('');
+    const writeBack = writeBackOf(written);
+    const dirty = this.dirtyLocals();
+    const locals = [...used.map((k) => `r${k} = 0`), ...written.map((k) => `m${k} = 0`)];
+    const body = cases
+      .join('')
+      .replace(WRITE_BACK, (_, where: string, line: string) => {
+        const i = Number(line) - this.start;
+        const mask = where === '<' ? dirty.in[i] : dirty.out[i];
+        return writeBackOf(written.filter((k) => mask & (1 << k)));
+      })
+      .replaceAll(LOAD, load ? `${load}\n` : '');
     const source =
       `"use strict";\n` +
       (names.length ? `const ${names.map((n, i) => `${n} = K[${i}]`).join(', ')};\n` : '') +
       `return function run(pc, budget) {\n` +
       `let n = 0, s = pc, f = -1, t = 0, a = 0, b = 0, r = 0, c = 0, x = 0, i = 0, w = 0, e = null;\n` +
-      `for (;;) {\nswitch (pc) {\n${cases.join('')}default: return n;\n}\n}\n};`;
+      (locals.length ? `let ${locals.join(', ')};\n${load}\n` : '') +
+      `for (;;) {\nswitch (pc) {\n${body}default:\n${writeBack}return n;\n}\n}\n};`;
     const registers = this.dsp.registers;
     const fail = (count: number, line: number, error: ParseError): number => {
       region.error = error;
@@ -277,6 +343,38 @@ class RegionCompiler {
     return region;
   }
 
+  /**
+   * The locals that may hold values not yet written back (bit k for register k)
+   * when each line starts (`in`) and ends (`out`). A line is entered by falling
+   * through from the line before, by a static jump, or with nothing pending: on
+   * entry to the function and after a jump to EIP (which writes back first).
+   */
+  private dirtyLocals(): { in: Int32Array; out: Int32Array } {
+    const count = this.end - this.start + 1;
+    const into = new Int32Array(count);
+    const out = new Int32Array(count);
+    for (let changed = true; changed;) {
+      changed = false;
+      for (let i = 0; i < count; i++) {
+        let mask = i > 0 ? out[i - 1] : 0;
+        for (const [from, to] of this.edges)
+          if (to - this.start === i) mask |= out[from - this.start];
+        const after = this.clean[i] ? 0 : mask | this.writes[i];
+        if (mask !== into[i] || after !== out[i]) {
+          into[i] = mask;
+          out[i] = after;
+          changed = true;
+        }
+      }
+    }
+    return { in: into, out };
+  }
+
+  /** Write-back of the locals pending at the start (`<`) or end (`>`) of the line. */
+  private writeBack(where: '<' | '>'): string {
+    return `/*write-back${where}${this.line}*/`;
+  }
+
   /** Whether code must not fall or jump into `line` (outside the region or a breakpoint). */
   private isStop(line: number): boolean {
     return line < this.start || line > this.end || this.breakpoint[line - this.start];
@@ -298,6 +396,7 @@ class RegionCompiler {
   private goto(target: number): string {
     if (this.isStop(target)) return `d.setInstructionPointer(${target}); return n;\n`;
     const cost = this.cost[target - this.start];
+    this.edges.push([this.line, target]);
     return (
       `if (n + ${cost} <= budget) { pc = s = ${target}; f = -1; continue; }\n` +
       `d.setInstructionPointer(${target}); return n;\n`
@@ -309,6 +408,7 @@ class RegionCompiler {
     const costs = this.constant(this.cost);
     const enterable = this.constant(this.enterable());
     return (
+      this.writeBack('>') +
       `pc = V[8] | 0;\n` +
       `if (pc >= ${this.start} && pc <= ${this.end} && ${enterable}[pc - ${this.start}] === 1 && ` +
       `n + ${costs}[pc - ${this.start}] <= budget) { s = pc; f = -1; continue; }\n` +
@@ -342,7 +442,7 @@ class RegionCompiler {
     const p = this.constant(param);
     let code =
       `V[8] = ${line + 1};\n` +
-      `e = ${c}.execute(${p});\n` +
+      `${this.writeBack('<')}e = ${c}.execute(${p});\n${LOAD}` +
       `if (e) { d.clearAddressOutOfRange(); return fail(n + ${line} - s + 1, ${line}, e); }\n` +
       this.rangeCheck(line);
     if (command instanceof JasminSleep) {
@@ -427,20 +527,22 @@ class RegionCompiler {
     }
     if (a.type & Op.MEM && arg.cAddress && (a.size === 1 || a.size === 2 || a.size === 4)) {
       const ea = this.effectiveAddress(arg.cAddress);
+      if (ea === null) return null;
       return { kind: 'mem', arg: a, value: 0, address: this.constant(a), ea };
     }
     return null;
   }
 
-  /** `calculateEffectiveAddress(true)` of `c`, inline for 32-bit registers. */
-  private effectiveAddress(c: CalculatedAddress): string {
+  /**
+   * `calculateEffectiveAddress(true)` of `c` inline, or null if it uses a register
+   * other than EAX..EBP (then the line calls `execute`).
+   */
+  private effectiveAddress(c: CalculatedAddress): string | null {
     const { base, index, scale, displacement } = c.parts;
-    if ((base && base.size !== 4) || (index && index.size !== 4)) {
-      return `${this.constant(c)}.calculateEffectiveAddress(true)`;
-    }
+    if ((base && !isGeneral(base)) || (index && !isGeneral(index))) return null;
     const terms: string[] = [];
-    if (base) terms.push(`(V[${base.address}] | 0)`);
-    if (index) terms.push(`Math.imul(V[${index.address}] | 0, ${scale})`);
+    if (base) terms.push(this.registerInt(base));
+    if (index) terms.push(`Math.imul(${this.registerInt(index)}, ${scale})`);
     terms.push(`(${displacement})`);
     return `((${terms.join(' + ')}) | 0)`;
   }
@@ -448,7 +550,7 @@ class RegionCompiler {
   /** Reads `op` into the local `name` as `Parameters.getNum` (unsigned). */
   private load(name: string, op: Operand): string {
     if (op.kind === 'imm') return `${name} = ${op.value};\n`;
-    if (op.kind === 'reg') return `${name} = ${registerRead(op.arg)};\n`;
+    if (op.kind === 'reg') return `${name} = ${this.registerRead(op.arg)};\n`;
     // `DataSpace.getUpdateNum(a, false)`: inline unless out of range or label markers exist.
     const size = op.arg.size;
     const offset = this.dsp.offset;
@@ -456,7 +558,7 @@ class RegionCompiler {
     const read = readBytes(size);
     return (
       `if (x >= ${offset} && x <= ${limit} && d.memInfo.size === 0) { i = x - ${offset}; ${name} = ${read}; }\n` +
-      `else ${name} = d.getUpdateNum(${op.address}, false);\n`
+      `else { ${this.writeBack('>')}${name} = d.getUpdateNum(${op.address}, false); }\n`
     );
   }
 
@@ -470,22 +572,57 @@ class RegionCompiler {
     return (
       `if (x >= ${offset} && x <= ${limit} && d.memInfo.size === 0 && ${unwatched('x', size)}) {\n` +
       this.writeBytes(size, value) +
-      `}\nelse d.putNum(${value}, ${op.address}, null);\n`
+      `}\nelse { ${this.writeBack('>')}d.putNum(${value}, ${op.address}, null); }\n`
     );
   }
 
-  /** `putNum(value, a, null)` for a register: `RegisterFile.setNum`, dropping a label marker. */
+  /**
+   * `putNum(value, a, null)` for a register: `RegisterFile.setNum`, dropping a label
+   * marker. A general register is written to its local; its stamp on write-back.
+   */
   private storeRegister(a: Address, value: string): string {
     const k = a.address;
-    const write =
-      a.mask === 0xffffffff && a.rshift === 0
-        ? `V[${k}] = ${value};\n`
-        : `V[${k}] = (V[${k}] & ${~a.mask}) | ((${value} << ${a.rshift}) & ${a.mask});\n`;
-    return (
-      write +
-      `RD[${k}] = R.stamp; RM[${k}] = ${a.mask | 0};\n` +
-      `if (d.regInfo.size !== 0) d.regInfo.delete(${k});\n`
-    );
+    const full = a.mask === 0xffffffff && a.rshift === 0;
+    const labels = `if (d.regInfo.size !== 0) d.regInfo.delete(${k});\n`;
+    if (this.inLocal(a)) {
+      this.used.add(k);
+      this.written.add(k);
+      if (this.line >= this.start && this.line <= this.end) {
+        this.writes[this.line - this.start] |= 1 << k;
+      }
+      const write = full
+        ? `r${k} = ${value} | 0;\n`
+        : `r${k} = (r${k} & ${~a.mask}) | ((${value} << ${a.rshift}) & ${a.mask});\n`;
+      return write + `m${k} = ${a.mask | 0};\n` + labels;
+    }
+    const write = full
+      ? `V[${k}] = ${value};\n`
+      : `V[${k}] = (V[${k}] & ${~a.mask}) | ((${value} << ${a.rshift}) & ${a.mask});\n`;
+    return write + `RD[${k}] = R.stamp; RM[${k}] = ${a.mask | 0};\n` + labels;
+  }
+
+  /** `RegisterFile.get(a)` as an expression (unsigned), from the local of a general register. */
+  private registerRead(a: Address): string {
+    if (!this.inLocal(a)) return registerRead(a);
+    const k = a.address;
+    this.used.add(k);
+    if (a.mask === 0xffffffff && a.rshift === 0) return `(r${k} >>> 0)`;
+    if (a.rshift === 0) return `(r${k} & ${a.mask})`;
+    return `((r${k} & ${a.mask}) >>> ${a.rshift})`;
+  }
+
+  /** Whether the code keeps register `a` in a local. */
+  private inLocal(a: Address): boolean {
+    return this.locals && isGeneral(a);
+  }
+
+  /** `RegisterFile.get(a) | 0` as an expression. */
+  private registerInt(a: Address): string {
+    if (this.inLocal(a) && a.mask === 0xffffffff && a.rshift === 0) {
+      this.used.add(a.address);
+      return `r${a.address}`;
+    }
+    return `(${this.registerRead(a)} | 0)`;
   }
 
   /** `Memory.setLittleEndian(x, value, size)` without watched bytes (x checked by the caller). */
@@ -505,9 +642,9 @@ class RegionCompiler {
   private pushValue(size: number): string {
     const offset = this.dsp.offset;
     return (
-      `c = V[6] - ${size};\n` +
+      `c = ${this.registerInt(this.dsp.ESP)} - ${size};\n` +
       this.storeRegister(this.dsp.ESP, 'c') +
-      `x = V[6] | 0;\n` +
+      `x = ${this.registerInt(this.dsp.ESP)};\n` +
       `if (x >= ${offset} && x <= ${this.dsp.memoryEnd - size}) {\n${this.writeBytes(size, 'a')}}\n` +
       `else d.setAddressOutOfRange();\n`
     );
@@ -518,10 +655,10 @@ class RegionCompiler {
     const offset = this.dsp.offset;
     const end = this.dsp.memoryEnd;
     return (
-      `c = V[6] + ${size};\n` +
+      `c = ${this.registerRead(this.dsp.ESP)} + ${size};\n` +
       `if (c > ${end}) d.setAddressOutOfRange();\n` +
       `else {\n` +
-      `x = V[6] | 0;\n` +
+      `x = ${this.registerInt(this.dsp.ESP)};\n` +
       `if (x >= ${offset} && x <= ${end - size}) { i = x - ${offset}; a = ${readBytes(size)}; }\n` +
       `else { d.setAddressOutOfRange(); a = 0; }\n` +
       this.storeRegister(dest, 'a') +
@@ -538,9 +675,10 @@ class RegionCompiler {
     const condition =
       pushed === 0
         ? STACK_FAST
-        : `${STACK_FAST} && ${unwatched(`((V[6] - ${pushed}) | 0)`, pushed)}`;
+        : `${STACK_FAST} && ${unwatched(`((${this.registerInt(this.dsp.ESP)} - ${pushed}) | 0)`, pushed)}`;
     return (
-      `if (${condition}) {\n${fast}} else ${this.constant(command)}.execute(${this.constant(p)});\n` +
+      `if (${condition}) {\n${fast}} else {\n` +
+      `${this.writeBack('<')}${this.constant(command)}.execute(${this.constant(p)});\n${LOAD}}\n` +
       this.rangeCheck(line)
     );
   }
@@ -701,8 +839,10 @@ class RegionCompiler {
   private lea(p: Parameters, ops: Operand[]): { code: string } | null {
     const source = p.argument(1).cAddress;
     if (ops.length !== 2 || ops[0].kind !== 'reg' || !source) return null;
+    const ea = this.effectiveAddress(source);
+    if (ea === null) return null;
     // LEA does not access memory: no range check.
-    return { code: `c = ${this.effectiveAddress(source)};\n` + this.store(ops[0], 'c') };
+    return { code: `c = ${ea};\n` + this.store(ops[0], 'c') };
   }
 
   /** The jump target of operand 0: a static line or a register (`getNum(0) | 0`). */
@@ -710,7 +850,7 @@ class RegionCompiler {
     const fixed = this.staticTarget(p);
     if (fixed !== null) return { line: fixed };
     const op = this.operand(p, 0);
-    if (op?.kind === 'reg') return { read: `(${registerRead(op.arg)} | 0)` };
+    if (op?.kind === 'reg') return { read: this.registerInt(op.arg) };
     return null;
   }
 
@@ -746,7 +886,7 @@ class RegionCompiler {
     let code = `n += ${line} - s + 1;\n`;
     if ('read' in target) code += `t = ${target.read};\n`;
     // Java long arithmetic: ECX = 0 gives -1 (stored as 0xFFFFFFFF), which jumps.
-    code += `c = ${registerRead(ecx)} - 1;\n`;
+    code += `c = ${this.registerRead(ecx)} - 1;\n`;
     code += this.storeRegister(ecx, 'c');
     const test = this.conditionTest(line, condition, previous);
     code += `if (c !== 0${test === 'true' ? '' : ` && ${test}`}) {\n${this.taken(target)}}\n`;
@@ -760,9 +900,10 @@ class RegionCompiler {
    * locals, as the lazy flags would compute them; otherwise from the flag getters.
    */
   private conditionTest(line: number, condition: number, previous?: FlagState): string {
-    const getter = conditionExpression(condition, (flag) => `d.${FLAG_GETTERS[flag]}`);
+    const ecx = this.registerInt(this.dsp.ECX);
+    const getter = conditionExpression(condition, ecx, (flag) => `d.${FLAG_GETTERS[flag]}`);
     if (!previous || getter === 'true' || getter === 'false') return getter;
-    const fused = conditionExpression(condition, (flag) => flagFromLocals(flag, previous));
+    const fused = conditionExpression(condition, ecx, (flag) => flagFromLocals(flag, previous));
     if (fused === getter) return getter;
     return `(f === ${line - 1} ? ${fused} : ${getter})`;
   }
@@ -818,7 +959,11 @@ function flagFromLocals(flag: number, state: FlagState): string {
 }
 
 /** `Command.testCondition` as an expression; `flag` gives each flag's expression. */
-function conditionExpression(condition: number, flag: (flag: number) => string): string {
+function conditionExpression(
+  condition: number,
+  ecx: string,
+  flag: (flag: number) => string,
+): string {
   const CF = () => flag(Flag.CF);
   const OF = () => flag(Flag.OF);
   const SF = () => flag(Flag.SF);
@@ -858,9 +1003,9 @@ function conditionExpression(condition: number, flag: (flag: number) => string):
     case Condition.G:
       return `!(${SF()} !== ${OF()} || ${ZF()})`;
     case Condition.CXZ:
-      return '((V[2] & 65535) === 0)';
+      return `((${ecx} & 65535) === 0)`;
     case Condition.ECXZ:
-      return '(V[2] === 0)';
+      return `(${ecx} === 0)`;
     case Condition.ALWAYS:
       return 'true';
     default:
@@ -884,6 +1029,18 @@ function readBytes(size: number): string {
   if (size === 4) return `(B[i] | (B[i + 1] << 8) | (B[i + 2] << 16) | (B[i + 3] << 24)) >>> 0`;
   if (size === 2) return `B[i] | (B[i + 1] << 8)`;
   return `B[i]`;
+}
+
+/**
+ * Placeholders in the code of a line for the write-back of the register locals and
+ * their reload, filled in when the registers the region uses are known.
+ */
+const WRITE_BACK = /\/\*write-back([<>])(\d+)\*\//g;
+const LOAD = '/*load*/';
+
+/** Whether `a` is a part of EAX..EBP (kept in a local by compiled code). */
+function isGeneral(a: Address): boolean {
+  return a.address >= 0 && a.address <= 7;
 }
 
 /** `RegisterFile.get(a)` as an expression on the register values `V`. */
