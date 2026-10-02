@@ -1,5 +1,5 @@
 import { Page, expect, test } from '@playwright/test';
-import { openNewDocument } from './helpers';
+import { openNewDocument, setProgram } from './helpers';
 
 const tabs = (page: Page) => page.getByRole('tablist', { name: 'Open tabs' });
 const renameField = (page: Page) => tabs(page).getByRole('textbox', { name: 'Rename tab' });
@@ -64,10 +64,15 @@ test.describe('renaming document tabs (port addition)', () => {
 
   test('F2 on a focused document tab starts renaming', async ({ page }) => {
     await openNewDocument(page);
+    await setProgram(page, 'nop');
     await tabs(page).getByRole('tab', { name: 'new document' }).focus();
     await page.keyboard.press('F2');
     await expect(renameField(page)).toBeFocused();
     await page.keyboard.type('via keyboard');
+    // Undo in the field stays in the field; the program keeps its text.
+    await page.keyboard.press('Control+z');
+    await expect(page.locator('.cm-content')).toHaveText('nop');
+    await renameField(page).fill('via keyboard');
     await page.keyboard.press('Enter');
     const renamed = tabs(page).getByRole('tab', { name: 'via keyboard' });
     await expect(renamed).toBeFocused();
