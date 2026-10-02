@@ -1,3 +1,4 @@
+import { MemoryRange } from '../core';
 import { ColorChoice, DEVICE_COLORS, OFF_BRIGHTNESS, Rgb, darken } from './color';
 import { Rect, idiv } from './geometry';
 import { ByteReader } from './memory-range';
@@ -13,17 +14,63 @@ export const GRAPHICS_MODE_LABELS: Readonly<Record<GraphicsMode, string>> = {
 
 /** Configuration of one document's Graphics display (spec 06 §4). */
 export class GraphicsDevice {
-  width = 16;
-  height = 16;
-  mode: GraphicsMode = 'binary';
+  /** Called when the watched bytes move or resize (set by the DeviceSet). */
+  onRangeChange: () => void = () => undefined;
+  private addressValue: number;
+  private widthValue = 16;
+  private heightValue = 16;
+  private modeValue: GraphicsMode = 'binary';
 
   constructor(
-    public address: number,
+    address: number,
     public color: ColorChoice,
-  ) {}
+  ) {
+    this.addressValue = address;
+  }
+
+  get address(): number {
+    return this.addressValue;
+  }
+
+  set address(address: number) {
+    this.addressValue = address;
+    this.onRangeChange();
+  }
+
+  get width(): number {
+    return this.widthValue;
+  }
+
+  set width(width: number) {
+    this.widthValue = width;
+    this.onRangeChange();
+  }
+
+  get height(): number {
+    return this.heightValue;
+  }
+
+  set height(height: number) {
+    this.heightValue = height;
+    this.onRangeChange();
+  }
+
+  get mode(): GraphicsMode {
+    return this.modeValue;
+  }
+
+  set mode(mode: GraphicsMode) {
+    this.modeValue = mode;
+    this.onRangeChange();
+  }
 
   get byteCount(): number {
     return graphicsByteCount(this.mode, this.width, this.height);
+  }
+
+  /** The bytes the picture shows. */
+  get range(): MemoryRange {
+    return { start: this.address, end: this.address + this.byteCount };
   }
 
   watches(address: number): boolean {

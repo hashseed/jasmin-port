@@ -419,3 +419,205 @@ describe('DeviceSet', () => {
     expect(changes).toEqual([]);
   });
 });
+
+describe('DeviceSet watched ranges', () => {
+  function setup() {
+    const session = new MachineSession({ memorySize: 4096, offset: 0 });
+    const devices = new DeviceSet(session, () => 0.1);
+    const changes: string[] = [];
+    devices.subscribe((change) =>
+      changes.push(change.kind === 'write' ? change.device : change.kind),
+    );
+    return { session, devices, changes, memory: session.dsp.memory };
+  }
+
+  it('watches only the bytes of the devices', () => {
+    const { devices, memory, changes } = setup();
+    devices.sevenSegment.address = 100;
+    devices.stripLight.address = 200;
+    devices.graphics.address = 300;
+    devices.console.setAddress(400, devices.read);
+    expect(memory.isWatched(99, 1)).toBe(false);
+    expect(memory.isWatched(100, 1)).toBe(true);
+    expect(memory.isWatched(103, 1)).toBe(true);
+    expect(memory.isWatched(104, 96)).toBe(false);
+    expect(memory.isWatched(201, 1)).toBe(true);
+    expect(memory.isWatched(202, 98)).toBe(false);
+    expect(memory.isWatched(331, 1)).toBe(true);
+    expect(memory.isWatched(332, 68)).toBe(false);
+    // The empty array Console: its terminator.
+    expect(memory.isWatched(400, 1)).toBe(true);
+    expect(memory.isWatched(401, 1000)).toBe(false);
+    memory.setLittleEndian(96, 0x01020304, 4);
+    memory.setLittleEndian(104, 0x01020304, 4);
+    expect(changes).toEqual([]);
+    // A dword straddling the start of the display.
+    memory.setLittleEndian(98, 0x01020304, 4);
+    expect(changes).toEqual(['7-Segment', '7-Segment']);
+  });
+
+  it('moves and resizes the ranges with the configuration', () => {
+    const { devices, memory } = setup();
+    devices.graphics.address = 1000;
+    expect(memory.isWatched(1000, 1)).toBe(true);
+    expect(memory.isWatched(1032, 1)).toBe(false);
+    devices.graphics.mode = 'truecolor';
+    expect(memory.isWatched(1000 + 16 * 16 * 4 - 1, 1)).toBe(true);
+    devices.graphics.width = 2;
+    devices.graphics.height = 1;
+    expect(memory.isWatched(1008, 1)).toBe(false);
+    devices.sevenSegment.address = 2000;
+    devices.sevenSegment.digits = 8;
+    expect(memory.isWatched(2007, 1)).toBe(true);
+    expect(memory.isWatched(2008, 1)).toBe(false);
+    devices.stripLight.address = 3000;
+    devices.stripLight.bars = 32;
+    expect(memory.isWatched(3003, 1)).toBe(true);
+    devices.stripLight.bars = 8;
+    expect(memory.isWatched(3001, 1)).toBe(false);
+    // The console is still at 0, the old graphics bytes are free.
+    expect(memory.isWatched(0, 1)).toBe(true);
+    expect(memory.isWatched(1, 999)).toBe(false);
+  });
+
+  it('follows the array Console string as it grows and shrinks; pipe mode watches one byte', () => {
+    const { session, devices, memory, changes } = setup();
+    devices.console.setAddress(500, devices.read);
+    memory.set(502, 0x43);
+    expect(changes).toEqual([]);
+    memory.setLittleEndian(500, 0x4241, 2);
+    expect(devices.console.text).toBe('ABC');
+    expect(memory.isWatched(503, 1)).toBe(true);
+    expect(memory.isWatched(504, 1)).toBe(false);
+    memory.set(501, 0);
+    expect(devices.console.text).toBe('A');
+    expect(memory.isWatched(502, 1)).toBe(false);
+    expect(changes).toEqual(['Console', 'Console', 'Console']);
+    devices.console.setMode('pipe', devices.read);
+    expect(memory.isWatched(500, 1)).toBe(true);
+    expect(memory.isWatched(501, 1)).toBe(false);
+    run(session, "mov al, 'x'\nmov [500], al\nmov [501], al");
+    expect(devices.console.text).toBe('x');
+  });
+
+  it('notifies devices from compiled Run code, also for pushes and calls', () => {
+    const { session, devices, changes } = setup();
+    devices.sevenSegment.address = 60;
+    devices.console.setMode('pipe', devices.read);
+    devices.console.setAddress(2000, devices.read);
+    devices.graphics.address = 1000;
+    session.setText(
+      [
+        'mov esp, 64',
+        'mov ecx, 26',
+        'mov ebx, 97',
+        'l: mov [2000], bl',
+        'inc ebx',
+        'push ecx',
+        'call f',
+        'pop eax',
+        'loop l',
+        'jmp e',
+        'f: mov [ecx*4+1000], eax',
+        'ret',
+        'e: nop',
+      ].join('\n'),
+    );
+    session.interpreter.beginRun(() => false);
+    let outcome;
+    do outcome = session.interpreter.runSteps(1000, () => false);
+    while (outcome.kind === 'continue');
+    session.interpreter.endRun();
+    expect(outcome).toEqual({ kind: 'end' });
+    expect(session.interpreter.runStats.compiled).toBeGreaterThan(100);
+    expect(devices.console.text).toBe('abcdefghijklmnopqrstuvwxyz');
+    // push ecx: [60, 64); call f: [56, 60), outside the display.
+    expect(changes.filter((c) => c === '7-Segment')).toHaveLength(26 * 4);
+    // ecx*4+1000 for ecx = 26..1: bytes 1004..1107, the display is [1000, 1032).
+    expect(changes.filter((c) => c === 'Graphics')).toHaveLength(7 * 4);
+  });
+
+  it('notifies exactly as a listener for every write would (random devices and programs)', () => {
+    let seed = 1;
+    const random = () => {
+      seed = (Math.imul(seed, 1103515245) + 12345) >>> 0;
+      return seed / 2 ** 32;
+    };
+    const pick = <T>(items: readonly T[]) => items[Math.floor(random() * items.length)];
+    for (let round = 0; round < 60; round++) {
+      const config = {
+        seven: [Math.floor(random() * 200), 1 + Math.floor(random() * 8)],
+        strip: [Math.floor(random() * 200), 1 + Math.floor(random() * 32)],
+        graphics: [
+          Math.floor(random() * 200),
+          pick(['binary', '8colors', 'truecolor'] as const),
+          1 + Math.floor(random() * 8),
+        ],
+        console: [Math.floor(random() * 200), pick(['array', 'pipe'] as const)],
+      } as const;
+      // Random stores, stack operations and a string growing at the Console, in 256 bytes.
+      const lines = ['mov esp, ' + (64 + 4 * Math.floor(random() * 48)), 'mov ecx, 40', 'l:'];
+      for (let k = 0; k < 8; k++) {
+        const target = pick([
+          `[ecx*${pick([1, 2, 4])}+${Math.floor(random() * 96)}]`,
+          `[${Math.floor(random() * 256)}]`,
+          `[edi+${config.console[0] + Math.floor(random() * 3)}]`,
+        ]);
+        const [size, register] = pick([
+          ['byte', 'al'],
+          ['word', 'ax'],
+          ['dword', 'eax'],
+        ]);
+        const value = pick(['0', '65', '7', '10', register]);
+        lines.push(
+          value === register ? `mov ${target}, ${register}` : `mov ${size} ${target}, ${value}`,
+        );
+        lines.push(
+          pick(['push ecx\npop esi', 'call f', 'push ax\npop dx', 'add eax, ecx', 'nop', 'nop']),
+        );
+      }
+      lines.push('mov edi, 40', 'sub edi, ecx', 'loop l', 'jmp e', 'f: inc eax', 'ret', 'e: nop');
+      const source = lines.join('\n');
+      const results = [false, true].map((everyWrite) => {
+        const session = new MachineSession({ memorySize: 4096, offset: 0 });
+        if (everyWrite) {
+          // As before ranges existed: the devices hear every write (all on the slow path).
+          const memory = session.dsp.memory;
+          const all = [{ start: -Infinity, end: Infinity }];
+          const addListener = memory.addListener.bind(memory);
+          const watch = memory.watch.bind(memory);
+          memory.addListener = (listener) => addListener(listener, all);
+          memory.watch = (listener) => watch(listener, all);
+        }
+        const devices = new DeviceSet(session, () => 0.1);
+        const changes: DeviceChange[] = [];
+        devices.subscribe((change) => changes.push(change));
+        devices.sevenSegment.address = config.seven[0];
+        devices.sevenSegment.digits = config.seven[1];
+        devices.stripLight.address = config.strip[0];
+        devices.stripLight.bars = config.strip[1];
+        devices.graphics.address = config.graphics[0];
+        devices.graphics.mode = config.graphics[1];
+        devices.graphics.width = config.graphics[2];
+        devices.graphics.height = config.graphics[2];
+        devices.console.setMode(config.console[1], devices.read);
+        devices.console.setAddress(config.console[0], devices.read);
+        const log: string[] = [];
+        devices.subscribe(() => log.push(devices.console.text));
+        session.setText(source);
+        session.interpreter.beginRun(() => false);
+        let outcome;
+        do outcome = session.interpreter.runSteps(97, () => false);
+        while (outcome.kind === 'continue');
+        session.interpreter.endRun();
+        expect(outcome, source).toEqual({ kind: 'end' });
+        return JSON.stringify({
+          changes,
+          log,
+          memory: [...session.dsp.memory.bytes.slice(0, 512)],
+        });
+      });
+      expect(results[0], source).toBe(results[1]);
+    }
+  });
+});
