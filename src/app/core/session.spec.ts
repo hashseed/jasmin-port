@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { remapLines } from './line-map';
-import { MachineSession, Scheduler } from './session';
+import { MachineSession, Scheduler, TimerHost, eventLoopScheduler } from './session';
 import { NOT_A_MEMORY_FILE, parseSnapshot, takeSnapshot } from './snapshot';
 
 /** A manual clock: every `now()` call advances time by 1 ms so Run slices end. */
@@ -340,4 +340,73 @@ describe('snapshots and .mem files (spec 04 §9.10, 09 §4.3)', () => {
     expect(takeSnapshot(s.dsp)).toEqual(before);
     expect(NOT_A_MEMORY_FILE).toBe('Not a Jasmin memory file.');
   });
+});
+
+describe('event-loop scheduler', () => {
+  /** Timer functions of this event loop, without `setImmediate` if `immediate` is false. */
+  function host(immediate: boolean): { host: TimerHost; timeouts: number[] } {
+    const timeouts: number[] = [];
+    return {
+      timeouts,
+      host: {
+        setTimeout: (callback, ms) => {
+          timeouts.push(ms);
+          return globalThis.setTimeout(callback, ms);
+        },
+        clearTimeout: (handle) => globalThis.clearTimeout(handle as never),
+        setImmediate: immediate ? (globalThis as TimerHost).setImmediate : undefined,
+        MessageChannel: globalThis.MessageChannel,
+      },
+    };
+  }
+
+  it.each([
+    ['setImmediate', true],
+    ['MessageChannel', false],
+  ])('yields with %s, in order, and cancels', async (_name, immediate) => {
+    const { host: h, timeouts } = host(immediate);
+    const scheduler = eventLoopScheduler(h);
+    const calls: string[] = [];
+    await new Promise<void>((done) => {
+      scheduler.setTimeout(() => calls.push('a'), 0);
+      const cancelled = scheduler.setTimeout(() => calls.push('cancelled'), 0);
+      scheduler.setTimeout(() => calls.push('b'), 0);
+      scheduler.clearTimeout(cancelled);
+      const delayed = scheduler.setTimeout(() => calls.push('delayed'), 5);
+      scheduler.clearTimeout(delayed);
+      scheduler.setTimeout(() => {
+        calls.push('timer');
+        done();
+      }, 10);
+    });
+    expect(calls).toEqual(['a', 'b', 'timer']);
+    // Only the real delays went to setTimeout.
+    expect(timeouts).toEqual([5, 10]);
+  });
+
+  it.each([true, false])(
+    'runs a program to the end and pauses (setImmediate: %s)',
+    async (immediate) => {
+      const scheduler = eventLoopScheduler(host(immediate).host);
+      const finite = new MachineSession(undefined, scheduler, { sliceMs: 2 });
+      finite.setText('mov ecx, 20000\nl: add eax, 1\nloop l');
+      const ended = new Promise<void>((done) =>
+        finite.subscribe((e) => e.kind === 'running' && !e.running && done()),
+      );
+      finite.run();
+      await ended;
+      expect(reg(finite, 'EAX')).toBe(20000);
+
+      const endless = new MachineSession(undefined, scheduler, { sliceMs: 2 });
+      endless.setText('l: add eax, 1\njmp l');
+      endless.run();
+      await new Promise((done) => globalThis.setTimeout(done, 30));
+      endless.pause();
+      const eax = reg(endless, 'EAX');
+      expect(eax).toBeGreaterThan(0);
+      expect(endless.running).toBe(false);
+      await new Promise((done) => globalThis.setTimeout(done, 20));
+      expect(reg(endless, 'EAX')).toBe(eax);
+    },
+  );
 });

@@ -18,11 +18,73 @@ export interface Scheduler {
   now(): number;
 }
 
-export const DEFAULT_SCHEDULER: Scheduler = {
-  setTimeout: (callback, ms) => globalThis.setTimeout(callback, ms),
-  clearTimeout: (handle) => globalThis.clearTimeout(handle as ReturnType<typeof setTimeout>),
-  now: () => performance.now(),
-};
+/** A pending zero-delay callback of an event-loop scheduler. */
+class Yield {
+  constructor(public callback: (() => void) | null) {}
+}
+
+/** The timer functions an event-loop scheduler uses (`globalThis` by default). */
+export interface TimerHost {
+  setTimeout(callback: () => void, ms: number): unknown;
+  clearTimeout(handle: unknown): void;
+  setImmediate?: (callback: () => void) => unknown;
+  MessageChannel?: typeof MessageChannel;
+}
+
+/**
+ * Runs zero-delay callbacks as soon as the event loop is free, without the
+ * minimum delay browsers impose on nested `setTimeout(0)` (4 ms, which would
+ * leave Run idle a quarter of the time between its 12 ms slices): `setImmediate`
+ * where it exists (Node), else a `MessageChannel` (browsers), else `setTimeout`.
+ * Each yield is a separate task, so input, rendering and timers still get turns.
+ */
+function zeroDelay(host: TimerHost): (y: Yield) => void {
+  const run = (y: Yield) => {
+    const callback = y.callback;
+    y.callback = null;
+    callback?.();
+  };
+  const { setImmediate, MessageChannel: Channel } = host;
+  if (typeof setImmediate === 'function') {
+    return (y) => setImmediate.call(host, () => run(y));
+  }
+  if (typeof Channel === 'function') {
+    const queue: Yield[] = [];
+    let channel: MessageChannel | null = null;
+    return (y) => {
+      if (channel === null) {
+        channel = new Channel();
+        channel.port1.onmessage = () => run(queue.shift()!);
+      }
+      queue.push(y);
+      channel.port2.postMessage(null);
+    };
+  }
+  return (y) => host.setTimeout(() => run(y), 0);
+}
+
+/**
+ * A scheduler on the event loop of `host`: delays use `setTimeout`, zero delays
+ * (Run's yields between time slices) skip the browsers' nested-timeout clamp.
+ */
+export function eventLoopScheduler(host: TimerHost = globalThis as TimerHost): Scheduler {
+  let post: ((y: Yield) => void) | null = null;
+  return {
+    setTimeout: (callback, ms) => {
+      if (ms > 0) return host.setTimeout(callback, ms);
+      const y = new Yield(callback);
+      (post ??= zeroDelay(host))(y);
+      return y;
+    },
+    clearTimeout: (handle) => {
+      if (handle instanceof Yield) handle.callback = null;
+      else host.clearTimeout(handle);
+    },
+    now: () => performance.now(),
+  };
+}
+
+export const DEFAULT_SCHEDULER: Scheduler = eventLoopScheduler();
 
 export interface SessionOptions {
   /** Longest stretch of Run work before yielding to the event loop, in ms. */
