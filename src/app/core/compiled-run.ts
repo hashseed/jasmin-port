@@ -4,17 +4,29 @@ import { Command, Condition, conditionCode } from './command';
 import { Add } from './commands/add';
 import { And } from './commands/and';
 import { Call } from './commands/call';
+import { Cbw } from './commands/cbw';
+import { Div } from './commands/div';
+import { Imul } from './commands/imul';
 import { Inc } from './commands/inc';
 import { JasminSleep } from './commands/jasmin-sleep';
 import { Jmp } from './commands/jmp';
 import { Lea } from './commands/lea';
 import { Loop } from './commands/loop';
 import { Mov } from './commands/mov';
+import { Movsx } from './commands/movsx';
+import { Movzx } from './commands/movzx';
+import { Mul } from './commands/mul';
+import { Nop } from './commands/nop';
 import { Pop } from './commands/pop';
 import { Push } from './commands/push';
+import { Rcl } from './commands/rcl';
 import { Ret } from './commands/ret';
+import { Setcc } from './commands/setcc';
+import { Shr } from './commands/shr';
+import { Xchg } from './commands/xchg';
 import { DataSpace } from './data-space';
 import { EVEN_PARITY, Flag } from './flags';
+import { mulHighS32, mulHighU32 } from './java';
 import { Op } from './op';
 import { Parameters } from './parameters';
 import { ParseError } from './parse-error';
@@ -30,9 +42,12 @@ import { RUNTIME_STACK_ERROR } from './parser';
  * The compiled code has the observable behavior of the run loop executing the same
  * lines one by one:
  * - common instructions (MOV, ADD/ADC/SUB/SBB/CMP, INC/DEC/NEG/NOT,
- *   AND/OR/XOR/TEST, LEA, Jcc/JMP, LOOPcc, PUSH, POP, CALL, RET) run as specialized
- *   code that does what their `execute` does on numbers, with the operands resolved
- *   when compiling;
+ *   AND/OR/XOR/TEST, LEA, Jcc/JMP, LOOPcc, PUSH, POP, CALL, RET, SHL/SAL/SHR/SAR,
+ *   ROL/ROR/RCL/RCR, MUL, IMUL, DIV/IDIV, MOVZX/MOVSX, XCHG, SETcc, CMOVcc,
+ *   CBW/CWDE/CWD/CDQ, NOP) run as specialized code that does what their `execute`
+ *   does on numbers, with the operands resolved when compiling; the rare cases that
+ *   `execute` computes with bigints (a rotate by a multiple of the operand size, a
+ *   DIV/IDIV dividend from 2^53 on) call `execute` from the specialized code;
  *   effective addresses are still computed on every execution (07 Q-I-18);
  * - every other instruction calls its command's `execute` (one call site per line,
  *   so no shared dispatch) and checks the result like `Parser.checkResult`;
@@ -199,6 +214,7 @@ interface Operand {
 const ADD_FLAGS = Flag.OF | Flag.SF | Flag.ZF | Flag.AF | Flag.CF | Flag.PF;
 const INC_FLAGS = Flag.OF | Flag.SF | Flag.ZF | Flag.AF | Flag.PF;
 const LOGIC_FLAGS = Flag.SF | Flag.ZF | Flag.PF;
+const SHIFT_FLAGS = LOGIC_FLAGS;
 const ALL_FLAGS = ADD_FLAGS;
 
 class RegionCompiler {
@@ -297,7 +313,7 @@ class RegionCompiler {
       `"use strict";\n` +
       (names.length ? `const ${names.map((n, i) => `${n} = K[${i}]`).join(', ')};\n` : '') +
       `return function run(pc, budget) {\n` +
-      `let n = 0, s = pc, f = -1, t = 0, a = 0, b = 0, r = 0, c = 0, x = 0, i = 0, w = 0, e = null;\n` +
+      `let n = 0, s = pc, f = -1, t = 0, a = 0, b = 0, r = 0, c = 0, x = 0, i = 0, w = 0, q = false, e = null;\n` +
       (locals.length ? `let ${locals.join(', ')};\n${load}\n` : '') +
       `for (;;) {\nswitch (pc) {\n${body}default:\n${writeBack}return n;\n}\n}\n};`;
     const registers = this.dsp.registers;
@@ -482,7 +498,11 @@ class RegionCompiler {
   specialize(line: number, entry: RunLine, previous?: FlagState): LineCode | null {
     const command = entry.command;
     const p = entry.param;
-    if (!command || !p || p.signed || !p.numeric) return null;
+    if (!command || !p || !p.numeric) return null;
+    // Operands read sign-extended only where the code below reads them so. (SAR and
+    // IDIV set `p.signed` when they first run: their code does not depend on it.)
+    if (p.signed && !SIGNED_COMMANDS.some((c) => command instanceof c)) return null;
+    if (command instanceof Nop) return { code: '', jumps: false };
     if (command instanceof Jmp) return this.jump(line, p, previous);
     if (command instanceof Loop) return this.loop(line, p, previous);
     if (command instanceof Push) return this.push(line, command, p);
@@ -499,11 +519,21 @@ class RegionCompiler {
     const memory = ops.filter((op) => op.kind === 'mem');
     if (memory.length > 1) return null;
     let result: { code: string; flags?: FlagState } | null = null;
-    if (command instanceof Mov) result = this.mov(p, ops);
+    if (command instanceof Mov) result = this.mov(line, p, ops, previous);
     else if (command instanceof Add) result = this.add(p, ops);
     else if (command instanceof Inc) result = this.inc(p, ops);
     else if (command instanceof And) result = this.and(p, ops);
     else if (command instanceof Lea) result = this.lea(p, ops);
+    else if (command instanceof Shr) result = this.shift(p, ops);
+    else if (command instanceof Rcl) result = this.rotate(line, command, p, ops);
+    else if (command instanceof Mul) result = this.mul(p, ops);
+    else if (command instanceof Imul) result = this.imul(p, ops);
+    else if (command instanceof Div) result = this.div(line, command, p, ops);
+    else if (command instanceof Movzx) result = this.extend(ops, false);
+    else if (command instanceof Movsx) result = this.extend(ops, true);
+    else if (command instanceof Xchg) result = this.xchg(ops);
+    else if (command instanceof Setcc) result = this.setcc(line, p, ops, previous);
+    else if (command instanceof Cbw) result = this.cbw(p);
     if (result === null) return null;
     let code = result.code;
     if (memory.length) {
@@ -562,6 +592,21 @@ class RegionCompiler {
     );
   }
 
+  /** Reads `op` into the local `name` as `Parameters.getNum` with `p.signed`. */
+  private loadSigned(name: string, op: Operand): string {
+    if (op.kind === 'imm') return `${name} = ${op.value};\n`;
+    if (op.kind === 'reg') return `${name} = ${this.registerSigned(op.arg)};\n`;
+    // `DataSpace.getUpdateNum(a, true)`, as `load`.
+    const size = op.arg.size;
+    const offset = this.dsp.offset;
+    const limit = this.dsp.memoryEnd - size;
+    const read = signExtend(readBytes(size), size);
+    return (
+      `if (x >= ${offset} && x <= ${limit} && d.memInfo.size === 0) { i = x - ${offset}; ${name} = ${read}; }\n` +
+      `else { ${this.writeBack('>')}${name} = d.getUpdateNum(${op.address}, true); }\n`
+    );
+  }
+
   /** `putNum(value, op, null)` for a register or memory destination. */
   private store(op: Operand, value: string): string {
     if (op.kind === 'reg') return this.storeRegister(op.arg, value);
@@ -609,6 +654,12 @@ class RegionCompiler {
     if (a.mask === 0xffffffff && a.rshift === 0) return `(r${k} >>> 0)`;
     if (a.rshift === 0) return `(r${k} & ${a.mask})`;
     return `((r${k} & ${a.mask}) >>> ${a.rshift})`;
+  }
+
+  /** `DataSpace.getSignedRegisterNum(a)` as an expression. */
+  private registerSigned(a: Address): string {
+    if (a.size === 4) return this.registerInt(a);
+    return signExtend(this.registerRead(a), a.size);
   }
 
   /** Whether the code keeps register `a` in a local. */
@@ -741,11 +792,19 @@ class RegionCompiler {
     );
   }
 
-  private mov(p: Parameters, ops: Operand[]): { code: string } | null {
-    // CMOVcc and labels (which mark the destination) call `execute`.
-    if (p.mnemo !== 'MOV' || p.type(1) === Op.LABEL || ops.length !== 2) return null;
-    if (ops[0].kind === 'imm') return null;
-    return { code: this.load('a', ops[1]) + this.store(ops[0], 'a') };
+  private mov(
+    line: number,
+    p: Parameters,
+    ops: Operand[],
+    previous?: FlagState,
+  ): { code: string } | null {
+    // Labels (which mark the destination) call `execute`.
+    if (p.type(1) === Op.LABEL || ops.length !== 2 || ops[0].kind === 'imm') return null;
+    const move = this.load('a', ops[1]) + this.store(ops[0], 'a');
+    if (p.mnemo === 'MOV') return { code: move };
+    // CMOVcc reads the source only if the condition holds.
+    const test = this.conditionTest(line, conditionCode(p.mnemo.substring(4)), previous);
+    return { code: `if (${test}) {\n${move}}\n` };
   }
 
   private add(p: Parameters, ops: Operand[]): { code: string; flags: FlagState } | null {
@@ -843,6 +902,278 @@ class RegionCompiler {
     if (ea === null) return null;
     // LEA does not access memory: no range check.
     return { code: `c = ${ea};\n` + this.store(ops[0], 'c') };
+  }
+
+  /** `fCarry = value` (a boolean expression). */
+  private setCarry(value: string): string {
+    return `d.cf = ${value}; d.lazyFlags &= ${~Flag.CF};\n`;
+  }
+
+  /** `fOverflow = value` (a boolean expression). */
+  private setOverflow(value: string): string {
+    return `d.of = ${value}; d.lazyFlags &= ${~Flag.OF};\n`;
+  }
+
+  /**
+   * Calls the command's `execute` for the cases the specialized code leaves to it
+   * (before the line writes any local), then checks its error.
+   */
+  private fallback(line: number, command: Command, p: Parameters): string {
+    return (
+      `V[8] = ${line + 1};\n` +
+      `${this.writeBack('<')}e = ${this.constant(command)}.execute(${this.constant(p)});\n${LOAD}` +
+      `if (e) { d.clearAddressOutOfRange(); return fail(n + ${line} - s + 1, ${line}, e); }\n`
+    );
+  }
+
+  /** A runtime error of DIV and IDIV (`Div.execute`) on `line`. */
+  private divisionError(line: number, error: () => ParseError): string {
+    return `d.clearAddressOutOfRange(); return fail(n + ${line} - s + 1, ${line}, ${this.constant(error)}());\n`;
+  }
+
+  /** SHL, SAL, SHR, SAR (`Shr.executeNum`). */
+  private shift(p: Parameters, ops: Operand[]): { code: string } | null {
+    if (ops.length !== 2 || ops[0].kind === 'imm') return null;
+    const size = p.size;
+    const bits = p.sizeOf(0) * 8;
+    const flags: FlagState = { lazy: SHIFT_FLAGS, size, a: 'a', b: 'c', r: 'r', known: {} };
+    let code = this.load('a', ops[0]) + this.load('c', ops[1]) + `c &= 31;\nif (c !== 0) {\n`;
+    if (p.mnemo.endsWith('L')) {
+      const carry = size === 4 ? `((a >>> (32 - c)) & 1) === 1` : `((r >> ${size * 8}) & 1) === 1`;
+      code +=
+        `r = a << c;\n` +
+        this.store(ops[0], 'r') +
+        this.setFlags(flags, 'c') +
+        `q = ${carry};\n` +
+        this.setCarry('q') +
+        `if (c === 1) { ${this.setOverflow(`q !== (((r >> ${bits - 1}) & 1) === 1)`)}}\n`;
+    } else {
+      if (p.mnemo === 'SHR') {
+        code += `if (c === 1) { ${this.setOverflow(`((a >>> ${bits - 1}) & 1) === 1`)}}\n`;
+        code += `r = a >>> c;\n`;
+      } else {
+        // SAR reads the operand again, sign-extended.
+        code += this.loadSigned('a', ops[0]);
+        code += `if (c === 1) { ${this.setOverflow('false')}}\n`;
+        code += `r = a >> c;\n`;
+      }
+      code +=
+        this.store(ops[0], 'r') +
+        this.setFlags(flags, 'c') +
+        this.setCarry('((a >> (c - 1)) & 1) === 1');
+    }
+    return { code: code + `}\n` };
+  }
+
+  /**
+   * ROL, ROR, RCL, RCR (`Rcl.execute`): the operand (with CF above it for RCL and
+   * RCR) rotated within its width. A count that is a nonzero multiple of the width
+   * calls `execute` (its CF then comes from bits beyond the rotated value).
+   */
+  private rotate(
+    line: number,
+    command: Command,
+    p: Parameters,
+    ops: Operand[],
+  ): { code: string } | null {
+    if (ops.length !== 2 || ops[0].kind === 'imm') return null;
+    const bits = p.sizeOf(0) * 8;
+    if (bits !== 8 && bits !== 16 && bits !== 32) return null;
+    const throughCarry = p.mnemo.startsWith('RC');
+    const width = throughCarry ? bits + 1 : bits;
+    const mask = bits === 32 ? 0xffffffff : (1 << bits) - 1;
+    // The value `b` (below 2^33) rotated right by `c` (1 .. width - 1) within `width` bits.
+    const rotated =
+      width <= 31
+        ? `((b >>> c) | (b << (${width} - c))) & ${2 ** width - 1}`
+        : width === 32
+          ? `((b >>> c) | (b << (32 - c))) >>> 0`
+          : `Math.floor(b / 2 ** c) + (b % 2 ** c) * 2 ** (${width} - c)`;
+    // Bit k of b: the quotient is below 2^33, so its low bit survives `& 1`.
+    const bit = (k: string) => `((Math.floor(b / 2 ** (${k})) & 1) === 1)`;
+    let code =
+      this.load('c', ops[1]) +
+      `if (c !== 0) {\nc = c % ${width};\n` +
+      `if (c === 0) {\n${this.fallback(line, command, p)}} else {\n` +
+      this.load('a', ops[0]) +
+      (throughCarry
+        ? `b = ((a & ${mask}) >>> 0) + (d.fCarry ? ${2 ** bits} : 0);\n`
+        : `b = (a & ${mask}) >>> 0;\n`);
+    if (p.mnemo.endsWith('R')) {
+      code +=
+        `r = (${rotated}) % ${2 ** bits};\n` +
+        `if (c === 1) { ${this.setOverflow(`((r >>> ${bits - 2}) & 1) !== ((r >>> ${bits - 1}) & 1)`)}}\n` +
+        this.setCarry(bit('c - 1'));
+    } else {
+      // Left by k is right by width - k; CF is then bit width - k of the value.
+      code +=
+        `c = ${width} - c;\n` +
+        `r = (${rotated}) % ${2 ** bits};\n` +
+        `q = ${bit('c')};\n` +
+        this.setCarry('q') +
+        `if (c === ${width - 1}) { ${this.setOverflow(`q !== (((r >>> ${bits - 1}) & 1) === 1)`)}}\n`;
+    }
+    return { code: code + this.store(ops[0], 'r') + `}\n}\n` };
+  }
+
+  /** MUL (`Mul.executeNum`). */
+  private mul(p: Parameters, ops: Operand[]): { code: string } | null {
+    if (ops.length !== 1 || ops[0].kind === 'imm') return null;
+    const d = this.dsp;
+    let code = this.load('a', ops[0]);
+    if (p.size === 1) {
+      code += `c = ${this.registerRead(d.AL)} * a;\n` + this.storeRegister(d.AX, 'c');
+      code += `q = (c >>> 8) !== 0;\n`;
+    } else if (p.size === 2) {
+      code += `c = ${this.registerRead(d.AX)} * a;\n` + this.storeRegister(d.AX, 'c & 65535');
+      code += `w = c >>> 16;\n` + this.storeRegister(d.DX, 'w') + `q = w !== 0;\n`;
+    } else if (p.size === 4) {
+      code +=
+        `b = ${this.registerRead(d.EAX)};\n` +
+        this.storeRegister(d.EAX, 'Math.imul(b, a) >>> 0') +
+        `w = ${this.constant(mulHighU32)}(b, a);\n` +
+        this.storeRegister(d.EDX, 'w') +
+        `q = w !== 0;\n`;
+    } else {
+      return null;
+    }
+    return { code: code + this.setCarry('q') + this.setOverflow('q') };
+  }
+
+  /** IMUL with one, two or three operands (`Imul.executeNum`; operands read signed). */
+  private imul(p: Parameters, ops: Operand[]): { code: string } | null {
+    const d = this.dsp;
+    // Products of 2^62 and more (only with large immediates) are bigints in `execute`.
+    if (ops.some((op) => op.kind === 'imm' && Math.abs(op.value) > 2 ** 31)) return null;
+    let code: string;
+    if (ops.length === 1) {
+      if (ops[0].kind === 'imm') return null;
+      code = this.loadSigned('a', ops[0]);
+      if (p.size === 1) {
+        code += `c = ${this.registerSigned(d.AL)} * a;\n` + this.storeRegister(d.AX, 'c');
+        code += `q = c < -128 || c >= 128;\n`;
+      } else if (p.size === 2) {
+        code +=
+          `c = ${this.registerSigned(d.AX)} * a;\n` +
+          this.storeRegister(d.AX, 'c & 65535') +
+          this.storeRegister(d.DX, '(c >> 16) & 65535') +
+          `q = c < -32768 || c >= 32768;\n`;
+      } else if (p.size === 4) {
+        code +=
+          `b = ${this.registerSigned(d.EAX)};\n` +
+          `c = Math.imul(b, a);\n` +
+          `w = ${this.constant(mulHighS32)}(b, a);\n` +
+          this.storeRegister(d.EAX, 'c >>> 0') +
+          this.storeRegister(d.EDX, 'w >>> 0') +
+          `q = w !== c >> 31;\n`;
+      } else {
+        return null;
+      }
+    } else {
+      if (ops[0].kind !== 'reg' || (p.size !== 1 && p.size !== 2 && p.size !== 4)) return null;
+      const [first, second] = ops.length === 2 ? [ops[0], ops[1]] : [ops[1], ops[2]];
+      const limit = 2 ** (p.size * 8 - 1);
+      code =
+        this.loadSigned('a', first) +
+        this.loadSigned('b', second) +
+        `c = b * a;\n` +
+        this.storeRegister(ops[0].arg, 'Math.imul(b, a)') +
+        `q = c < -${limit} || c >= ${limit};\n`;
+    }
+    return { code: code + this.setCarry('q') + this.setOverflow('q') };
+  }
+
+  /**
+   * DIV and IDIV (`Div.executeNum`). A 32-bit dividend of 2^53 or more in magnitude
+   * (EDX beyond 20 bits) calls `execute`. Division by zero and a quotient that does
+   * not fit are errors that change nothing (07 Q-I-3).
+   */
+  private div(
+    line: number,
+    command: Command,
+    p: Parameters,
+    ops: Operand[],
+  ): { code: string } | null {
+    if (ops.length !== 1 || ops[0].kind === 'imm') return null;
+    const d = this.dsp;
+    const signed = p.mnemo === 'IDIV';
+    const size = p.size;
+    const divisor = signed ? this.loadSigned('b', ops[0]) : this.load('b', ops[0]);
+    let code: string;
+    if (size === 1) {
+      const ax = signed ? this.registerSigned(d.AX) : this.registerRead(d.AX);
+      code = divisor + `a = ${ax};\n`;
+    } else if (size === 2) {
+      const dx = signed ? this.registerSigned(d.DX) : this.registerRead(d.DX);
+      code = divisor + `a = ${dx} * 65536 + ${this.registerRead(d.AX)};\n`;
+    } else if (size === 4) {
+      const edx = signed ? this.registerInt(d.EDX) : this.registerRead(d.EDX);
+      code =
+        `w = ${edx};\n` +
+        `if (w > 1048575 || w < -1048575) {\n${this.fallback(line, command, p)}} else {\n` +
+        divisor +
+        `a = w * 4294967296 + ${this.registerRead(d.EAX)};\n`;
+    } else {
+      return null;
+    }
+    const bits = size * 8;
+    const fits = signed
+      ? `c >= ${-(2 ** (bits - 1))} && c < ${2 ** (bits - 1)}`
+      : `c >= 0 && c < ${2 ** bits}`;
+    const [quotient, remainder] =
+      size === 1 ? [d.AL, d.AH] : size === 2 ? [d.AX, d.DX] : [d.EAX, d.EDX];
+    code +=
+      `if (b === 0) { ${this.divisionError(line, divisionByZero)}}\n` +
+      `r = a % b;\nc = (a - r) / b;\n` +
+      `if (!(${fits})) { ${this.divisionError(line, divisionOverflow)}}\n` +
+      this.storeRegister(quotient, 'c') +
+      this.storeRegister(remainder, 'r');
+    return { code: size === 4 ? code + `}\n` : code };
+  }
+
+  /** MOVZX and MOVSX. */
+  private extend(ops: Operand[], signed: boolean): { code: string } | null {
+    if (ops.length !== 2 || ops[0].kind !== 'reg') return null;
+    const load = signed ? this.loadSigned('a', ops[1]) : this.load('a', ops[1]);
+    return { code: load + this.store(ops[0], 'a') };
+  }
+
+  /** XCHG (`Xchg.execute`): reads both operands, then writes operand 1, then operand 0. */
+  private xchg(ops: Operand[]): { code: string } | null {
+    if (ops.length !== 2 || ops[0].kind === 'imm' || ops[1].kind === 'imm') return null;
+    let code = this.load('b', ops[1]) + this.load('a', ops[0]) + this.store(ops[1], 'a');
+    // Operand 0's address is computed again: the first write may change its registers.
+    if (ops[0].kind === 'mem') code += `x = ${ops[0].ea};\n${ops[0].address}.address = x;\n`;
+    return { code: code + this.store(ops[0], 'b') };
+  }
+
+  /** SETcc (`Setcc.execute`). */
+  private setcc(
+    line: number,
+    p: Parameters,
+    ops: Operand[],
+    previous?: FlagState,
+  ): { code: string } | null {
+    if (ops.length !== 1 || ops[0].kind === 'imm') return null;
+    const test = this.conditionTest(line, conditionCode(p.mnemo.substring(3)), previous);
+    return { code: `a = ${test} ? 1 : 0;\n` + this.store(ops[0], 'a') };
+  }
+
+  /** CBW, CWDE, CWD, CDQ (`Cbw.execute`). */
+  private cbw(p: Parameters): { code: string } | null {
+    const d = this.dsp;
+    switch (p.mnemo) {
+      case 'CBW':
+        return { code: this.storeRegister(d.AX, this.registerSigned(d.AL)) };
+      case 'CWDE':
+        return { code: this.storeRegister(d.EAX, this.registerSigned(d.AX)) };
+      case 'CWD':
+        return { code: this.storeRegister(d.DX, `(${this.registerSigned(d.AX)} >> 16) & 65535`) };
+      case 'CDQ':
+        return { code: this.storeRegister(d.EDX, `${this.registerSigned(d.EAX)} >> 31`) };
+      default:
+        return null;
+    }
   }
 
   /** The jump target of operand 0: a static line or a register (`getNum(0) | 0`). */
@@ -1013,6 +1344,9 @@ function conditionExpression(
   }
 }
 
+/** Commands whose operands the specialized code reads sign-extended as `execute` does. */
+const SIGNED_COMMANDS = [Imul, Movsx, Cbw, Div, Shr];
+
 /** Stack code is inline only without label markers (and, for a push, watched bytes). */
 const STACK_FAST = 'd.memInfo.size === 0 && d.regInfo.size === 0';
 
@@ -1023,6 +1357,16 @@ const STACK_FAST = 'd.memInfo.size === 0 && d.regInfo.size === 0';
 function unwatched(address: string, size: number): string {
   return `(${address} >= M.watchEnd || ${address} + ${size} <= M.watchStart || !M.isWatched(${address}, ${size}))`;
 }
+
+/** The signed value of the unsigned `size`-byte expression `value`. */
+function signExtend(value: string, size: number): string {
+  if (size === 4) return `((${value}) | 0)`;
+  const shift = 32 - size * 8;
+  return `(((${value}) << ${shift}) >> ${shift})`;
+}
+
+const divisionByZero = () => ParseError.runtime('Division by zero');
+const divisionOverflow = () => ParseError.runtime('Division overflow');
 
 /** Unsigned little-endian read of `size` (1, 2 or 4) bytes at `B[i]`. */
 function readBytes(size: number): string {

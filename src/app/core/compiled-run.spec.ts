@@ -218,7 +218,7 @@ describe('compiled Run (spec 04 §9.3 port note)', () => {
     const pairs = (count: number) =>
       Array.from(
         { length: count },
-        (_, k) => `add ${registers[k % 6]}, ${k + 1}\nshl ${registers[(k + 1) % 6]}, 1`,
+        (_, k) => `add ${registers[k % 6]}, ${k + 1}\nbswap ${registers[(k + 1) % 6]}`,
       ).join('\n');
     const regionSource = (count: number) => {
       const m = machine(`top: ${pairs(count)}\ndec ecx\njnz top`, true);
@@ -234,10 +234,13 @@ describe('compiled Run (spec 04 §9.3 port note)', () => {
 
   it('specializes the common instructions', () => {
     const source =
-      'mov eax, [ebx+4]\nadd eax, 1\njne 0\npush eax\nimul eax, 3\npop bx\nret\nshl eax, 1';
+      'mov eax, [ebx+4]\nadd eax, 1\njne 0\npush eax\nimul eax, 3\npop bx\nret\nshl eax, 1\n' +
+      'sar byte [esi], cl\nrcl ax, 1\nmul dword [ebx]\nidiv cx\nmovzx eax, byte [esi]\n' +
+      'movsx edx, cx\nxchg eax, [esi]\nsetg al\ncmovl ecx, [esi]\ncdq\nnop\n' +
+      'bswap eax\nbt eax, 3\nimul eax, 4294967295\nxadd eax, ebx';
     const m = machine(source, true);
     const specialized = m.program.results.map((r) => isSpecialized(m.dsp, r));
-    expect(specialized).toEqual([true, true, true, true, false, true, true, false]);
+    expect(specialized).toEqual([...Array<boolean>(19).fill(true), false, false, false, false]);
   });
 
   it('never executes more lines than the budget, also in a tight loop', () => {
@@ -495,6 +498,189 @@ top:
     expect(generalRegisters(results[1])).toBe(generalRegisters(results[0]));
   });
 
+  it('runs shifts, rotates, MUL, IMUL, DIV and extensions as execute does on edge values', () => {
+    const edges = [
+      0, 1, 2, 7, 0x7f, 0x80, 0xff, 0x100, 0x7fff, 0x8000, 0xffff, 0x10000, 0x12345678, 0x7fffffff,
+      0x80000000, 0x80000001, 0xfffffffe, 0xffffffff,
+    ];
+    const counts = [0, 1, 2, 8, 9, 16, 17, 31, 33, 255];
+    // Each iteration loads EAX, EBX (and [3000]) and EDX from the tables, CF from bit
+    // 31 of EDX, runs the instruction and adds the registers, [3000] and the flags
+    // (PUSHFD) to a checksum in EDI.
+    const pairs = edges.flatMap((a, i) =>
+      counts.map((c, k) => [
+        a,
+        (edges[(i + k) % edges.length] & ~0xff) | c,
+        edges[(i * 7 + k) % edges.length],
+      ]),
+    );
+    const table = (k: number) =>
+      pairs.map((p, i) => `${i === 0 ? 'dd ' : i % 16 === 0 ? '\ndd ' : ', '}${p[k]}`).join('');
+    const program = (instruction: string) => `
+va: ${table(0)}
+vb: ${table(1)}
+vd: ${table(2)}
+  mov edi, 0
+  mov esi, 0
+  mov esp, 4000
+top:
+  mov eax, [esi*4+va]
+  mov ebx, [esi*4+vb]
+  mov edx, [esi*4+vd]
+  mov [3000], ebx
+  mov ecx, ebx
+  bt edx, 31
+  ${instruction}
+  pushfd
+  pop ebp
+  imul edi, edi, 31
+  add edi, ebp
+  imul edi, edi, 31
+  add edi, eax
+  imul edi, edi, 31
+  add edi, ebx
+  imul edi, edi, 31
+  add edi, ecx
+  imul edi, edi, 31
+  add edi, edx
+  imul edi, edi, 31
+  add edi, [3000]
+  inc esi
+  cmp esi, ${pairs.length}
+  jb top`;
+    const forms = [
+      ...['shl', 'sal', 'shr', 'sar', 'rol', 'ror', 'rcl', 'rcr'].flatMap((op) =>
+        ['al', 'ah', 'ax', 'eax', 'byte [3000]', 'word [3000]', 'dword [3000]'].flatMap((dest) =>
+          ['cl', '1', '9', '33'].map((count) => `${op} ${dest}, ${count}`),
+        ),
+      ),
+      ...['mul', 'imul'].flatMap((op) =>
+        ['bl', 'bh', 'bx', 'ebx', 'byte [3000]', 'word [3000]', 'dword [3000]'].map(
+          (source) => `${op} ${source}`,
+        ),
+      ),
+      // Divisions that do not fail (the error cases have their own test): a nonzero
+      // divisor and a dividend below 2^(size * 8 - 1) in magnitude, also negative.
+      ...['div', 'idiv', 'idiv-'].flatMap((op) =>
+        ['bl', 'bh', 'bx', 'ebx', 'byte [3000]', 'word [3000]', 'dword [3000]'].map((source) => {
+          const size = /^e|dword/.test(source) ? 4 : /x$|^word/.test(source) ? 2 : 1;
+          const mask = [0, 0x7f, 0x7fff, 0, 0x7fffffff][size];
+          const negate = op === 'idiv-' ? `neg ${['', 'ax', 'ax', '', 'eax'][size]}\n  ` : '';
+          const extend = op === 'div' ? 'xor edx, edx' : ['', 'nop', 'cwd', '', 'cdq'][size];
+          return (
+            `and eax, ${mask}\n  or ebx, 0x10101\n  mov [3000], ebx\n  ${negate}${extend}\n  ` +
+            `${op.replace('-', '')} ${source}`
+          );
+        }),
+      ),
+      // EDX beyond 20 bits: `execute` divides (bigints).
+      'mov edx, 0x123456\n  or ebx, 0x40000000\n  div ebx',
+      'mov edx, 0x123456\n  and ebx, 0x7fffffff\n  or ebx, 0x40000000\n  idiv ebx',
+      'mov edx, -1193046\n  and ebx, 0x7fffffff\n  or ebx, 0x40000000\n  idiv ebx',
+      'imul eax, ebx',
+      'imul ax, bx',
+      'imul eax, [3000]',
+      'imul edx, ebx, -70000',
+      'imul dx, bx, 300',
+      'imul eax, eax, 2147483647',
+      'movzx eax, bl',
+      'movzx eax, bh',
+      'movsx eax, bx',
+      'movsx dx, bl',
+      'movsx eax, byte [3001]',
+      'movzx edx, word [3000]',
+      'xchg eax, ebx',
+      'xchg al, ah',
+      'xchg [3000], bh',
+      'xchg ax, word [3000]',
+      'setc al',
+      'setg byte [3000]',
+      'cmovo eax, ebx',
+      'cmovnc dx, word [3000]',
+      'cbw',
+      'cwde',
+      'cwd',
+      'cdq',
+    ];
+    for (const [k, form] of forms.entries()) {
+      // Every fourth form also stops at other lines (the checksum covers every iteration).
+      const budgets = k % 4 === 0 ? [37, 101] : [1000];
+      try {
+        const { fast, outcomes } = compare(program(form), budgets, new Set(), 100);
+        expect(
+          fast.interpreter.runStats.compiled,
+          describeOutcome(outcomes.at(-1)!),
+        ).toBeGreaterThan(pairs.length * 10);
+      } catch (error) {
+        throw new Error(`${form}, budgets ${budgets.join(' ')}: ${String(error)}`, {
+          cause: error,
+        });
+      }
+    }
+  }, 600_000);
+
+  it('stops on DIV and IDIV errors with the registers written back (07 Q-I-3)', () => {
+    // Registers the loop writes stay in locals until the error returns.
+    const loop = (setup: string, division: string) => `
+  mov ecx, 20
+top:
+  add eax, 3
+  mov bl, al
+  mov ebp, ecx
+  ${setup}
+  ${division}
+  mov edi, eax
+  dec ecx
+  jnz top`;
+    // Each case fails when ECX reaches 6, after 14 iterations.
+    const below7 = 'cmp ecx, 7\n  setb dl\n  movzx edx, dl';
+    const cases: [string, string, string][] = [
+      ['mov esi, ecx\n  sub esi, 6\n  mov edx, 0', 'div esi', 'Division by zero'],
+      ['mov esi, ecx\n  sub esi, 6\n  cdq', 'idiv esi', 'Division by zero'],
+      [`${below7}\n  mov esi, 1`, 'div esi', 'Division overflow'],
+      ['mov si, cx\n  sub si, 6\n  mov dx, 0', 'idiv si', 'Division by zero'],
+      ['mov ax, 100\n  mov dh, cl\n  sub dh, 6', 'div dh', 'Division by zero'],
+      [
+        `mov eax, 7\n  ${below7}\n  mov ah, dl\n  shl ah, 2\n  mov dl, 2`,
+        'div dl',
+        'Division overflow',
+      ],
+      [
+        `${below7}\n  mov eax, edx\n  ror eax, 1\n  cdq\n  mov esi, -1`,
+        'idiv esi',
+        'Division overflow',
+      ],
+      // EDX beyond 20 bits: `execute` divides (bigints), also when it fails.
+      [
+        'mov edx, 0x123456\n  mov esi, ecx\n  sub esi, 6\n  shl esi, 24',
+        'div esi',
+        'Division by zero',
+      ],
+      [
+        'mov edx, 0x123456\n  mov esi, ecx\n  sub esi, 5\n  shl esi, 20',
+        'div esi',
+        'Division overflow',
+      ],
+    ];
+    for (const [setup, division, message] of cases) {
+      const source = loop(setup, division);
+      const line = source.split('\n').findIndex((l) => l.trim() === division);
+      for (const budgets of [[1000], [7, 13]]) {
+        const { fast, outcomes } = compare(source, budgets, new Set(), 1000);
+        expect(outcomes.at(-1), source).toMatchObject({
+          kind: 'error',
+          line,
+          error: expect.objectContaining({ errorMsg: message }),
+        });
+        expect(fast.dsp.getInstructionPointer()).toBe(line);
+        if (budgets[0] === 1000) {
+          expect(fast.interpreter.runStats.compiled).toBeGreaterThan(40);
+          expect(isSpecialized(fast.dsp, fast.program.results[line])).toBe(true);
+        }
+      }
+    }
+  });
+
   it('matches the plain loop on random programs (differential fuzzer)', () => {
     // FUZZ_RUNS and FUZZ_BATCHES scale it up (e.g. FUZZ_RUNS=5000 FUZZ_BATCHES=400; hence
     // the long timeout), FUZZ_SEED picks other programs.
@@ -569,7 +755,7 @@ function randomProgram(random: (n: number) => number, pick: <T>(items: readonly 
       }
     }
     const size = pick([1, 2, 4, 4, 4]);
-    const r = random(22);
+    const r = random(27);
     if (r < 6) {
       const op = pick(['mov', 'add', 'adc', 'sub', 'sbb', 'cmp', 'and', 'or', 'xor', 'test']);
       const dest = operand(size, true);
@@ -597,6 +783,41 @@ function randomProgram(random: (n: number) => number, pick: <T>(items: readonly 
       lines.push('call sub');
     } else if (r < 17) {
       lines.push(`and edi, ${pick([1020, 2044, 508])}`);
+    } else if (r < 23) {
+      // Shifts, rotates, multiplication, division, extensions, XCHG, SETcc, CMOVcc, ...
+      const count = () => (random(3) === 0 ? 'cl' : String(random(random(2) ? 40 : 256)));
+      const wide = pick([2, 4]);
+      const extendSource = () => (random(3) === 0 ? memory(pick([1, 2])) : register(pick([1, 2])));
+      const dividend = pick([
+        '',
+        '',
+        'xor edx, edx\n',
+        'cdq\n',
+        'cwd\n',
+        `mov edx, ${random(9)}\n`,
+      ]);
+      lines.push(
+        pick([
+          `${pick(['shl', 'sal', 'shr', 'sar'])} ${operand(size, true)}, ${count()}`,
+          `${pick(['shl', 'shr', 'sar'])} ${register(size)}, ${pick(['1', 'cl'])}`,
+          `${pick(['rol', 'ror', 'rcl', 'rcr'])} ${operand(size, true)}, ${count()}`,
+          `${pick(['rol', 'ror', 'rcl', 'rcr'])} ${register(size)}, ${pick(['1', 'cl', String(size * 8), String(size * 8 + 1)])}`,
+          `mul ${operand(size, true)}`,
+          `imul ${operand(size, true)}`,
+          `imul ${register(wide)}, ${operand(wide, true)}`,
+          `imul ${register(wide)}, ${operand(wide, true)}, ${immediate(wide)}`,
+          `imul ${register(4)}, ${random(2) ? immediate(4) : pick(['-2147483648', '2147483647', '4294967295'])}`,
+          `${dividend}${pick(['div', 'idiv'])} ${operand(size, true)}`,
+          `${pick(['movzx', 'movsx'])} ${register(4)}, ${extendSource()}`,
+          `${pick(['movzx', 'movsx'])} ${register(2)}, ${random(3) === 0 ? memory(1) : register(1)}`,
+          `xchg ${operand(size, true)}, ${register(size)}`,
+          `xchg ${register(size)}, ${operand(size, true)}`,
+          `xchg ${pick(['[ecx*2+edi]', '[esi+edi]'])}, ${pick(['ecx', 'cx', 'cl', 'esi', 'si'])}`,
+          `set${pick(CONDITIONS)} ${operand(1, true)}`,
+          `cmov${pick(CONDITIONS)} ${register(wide)}, ${operand(wide, true)}`,
+          pick(['cbw', 'cwde', 'cwd', 'cdq', 'nop']),
+        ]),
+      );
     } else {
       // Instructions that call `execute`.
       lines.push(
