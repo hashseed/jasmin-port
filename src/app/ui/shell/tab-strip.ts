@@ -1,7 +1,16 @@
 import { CdkContextMenuTrigger, CdkMenu, CdkMenuItem } from '@angular/cdk/menu';
-import { ChangeDetectionStrategy, Component, ElementRef, inject } from '@angular/core';
+import {
+  ChangeDetectionStrategy,
+  Component,
+  ElementRef,
+  Injector,
+  afterNextRender,
+  inject,
+  signal,
+} from '@angular/core';
 import { LucideX } from '@lucide/angular';
 import { ActionsService } from '../../services/actions.service';
+import { DocumentStore } from '../../services/document-store';
 import { Tab, WorkspaceService } from '../../services/workspace.service';
 import { rovingIndex } from '../common/roving-focus';
 
@@ -11,6 +20,9 @@ import { rovingIndex } from '../common/roving-focus';
  * Keyboard: the selected tab is the strip's one tab stop; Left/Right/Home/End
  * select another tab (selection follows focus), Delete closes the focused tab
  * (the keyboard form of the hover close button).
+ * Port addition: double-clicking a document tab's title, or F2 on a focused
+ * document tab, renames it inline. Enter or leaving the field commits, Escape
+ * cancels; an empty name keeps the old one. Help tabs cannot be renamed.
  */
 @Component({
   selector: 'app-tab-strip',
@@ -21,23 +33,37 @@ import { rovingIndex } from '../common/roving-focus';
       @for (tab of workspace.tabs(); track tab.id) {
         @let selected = tab.id === workspace.selected()?.id;
         <div class="tab" role="presentation" [class.selected]="selected">
-          <button
-            type="button"
-            role="tab"
-            class="tab-label"
-            [id]="'tab-' + tab.id"
-            [attr.aria-selected]="selected"
-            [attr.aria-controls]="'panel-' + tab.id"
-            [tabindex]="selected ? 0 : -1"
-            (click)="workspace.select(tab.id)"
-            (keydown)="onKey($event)"
-          >
-            {{ titleOf(tab) }}
-            @if (tab.kind === 'document' && tab.doc.modified()) {
-              <span class="modified" title="Unsaved changes" aria-hidden="true"></span>
-              <span class="hidden-text">(unsaved changes)</span>
-            }
-          </button>
+          @if (editing() === tab.id && tab.kind === 'document') {
+            <input
+              type="text"
+              class="tab-rename"
+              aria-label="Rename tab"
+              spellcheck="false"
+              [value]="tab.doc.title()"
+              [size]="renameSize(tab.doc.title())"
+              (keydown)="onRenameKey($event, tab.doc)"
+              (blur)="commitRename(tab.id, tab.doc, $any($event.target).value)"
+            />
+          } @else {
+            <button
+              type="button"
+              role="tab"
+              class="tab-label"
+              [id]="'tab-' + tab.id"
+              [attr.aria-selected]="selected"
+              [attr.aria-controls]="'panel-' + tab.id"
+              [tabindex]="selected ? 0 : -1"
+              (click)="workspace.select(tab.id)"
+              (dblclick)="startRename(tab)"
+              (keydown)="onKey($event)"
+            >
+              {{ titleOf(tab) }}
+              @if (tab.kind === 'document' && tab.doc.modified()) {
+                <span class="modified" title="Unsaved changes" aria-hidden="true"></span>
+                <span class="hidden-text">(unsaved changes)</span>
+              }
+            </button>
+          }
           <button
             type="button"
             class="tab-close"
@@ -120,6 +146,15 @@ import { rovingIndex } from '../common/roving-focus';
     .tab:hover {
       background: var(--bg-hover);
     }
+    .tab-rename {
+      margin: 3px 26px 3px var(--space-2);
+      padding: 2px var(--space-1);
+      border: 1px solid var(--accent);
+      border-radius: var(--radius-sm);
+      background: var(--bg);
+      color: var(--text);
+      font: inherit;
+    }
     .tab-close {
       position: absolute;
       right: 4px;
@@ -149,10 +184,19 @@ export class TabStrip {
   protected readonly closeTab = inject(ActionsService).actions.closeTab;
 
   private readonly host = inject<ElementRef<HTMLElement>>(ElementRef);
+  private readonly injector = inject(Injector);
+
+  /** The id of the tab whose title is being edited, if any. */
+  protected readonly editing = signal<string | null>(null);
 
   protected onKey(event: KeyboardEvent): void {
     const tabs = this.workspace.tabs();
     const current = tabs.findIndex((t) => t.id === this.workspace.selected()?.id);
+    if (event.key === 'F2' && current >= 0) {
+      event.preventDefault();
+      this.startRename(tabs[current]);
+      return;
+    }
     if (event.key === 'Delete' && current >= 0) {
       event.preventDefault();
       this.workspace.close(tabs[current].id);
@@ -164,6 +208,54 @@ export class TabStrip {
     event.preventDefault();
     this.workspace.select(tabs[next].id);
     this.focusSelected();
+  }
+
+  /** Replaces a document tab's label with a text field holding its title, all selected. */
+  protected startRename(tab: Tab): void {
+    if (tab.kind !== 'document') return;
+    this.workspace.select(tab.id);
+    this.editing.set(tab.id);
+    afterNextRender(
+      () => {
+        const input = this.host.nativeElement.querySelector<HTMLInputElement>('.tab-rename');
+        input?.focus();
+        input?.select();
+      },
+      { injector: this.injector },
+    );
+  }
+
+  protected onRenameKey(event: KeyboardEvent, doc: DocumentStore): void {
+    event.stopPropagation();
+    if (event.key === 'Enter') {
+      event.preventDefault();
+      const id = this.editing();
+      if (id !== null) this.commitRename(id, doc, (event.target as HTMLInputElement).value);
+      this.focusTabAfterRender();
+    } else if (event.key === 'Escape') {
+      event.preventDefault();
+      this.editing.set(null);
+      this.focusTabAfterRender();
+    }
+  }
+
+  /**
+   * Ends editing (Enter, or the field lost focus); a blank name keeps the old title.
+   * Ignored once editing has ended, so the blur that follows Enter or Escape is a no-op.
+   */
+  protected commitRename(id: string, doc: DocumentStore, value: string): void {
+    if (this.editing() !== id) return;
+    this.editing.set(null);
+    doc.rename(value);
+  }
+
+  /** Returns focus to the tab once its label has replaced the text field. */
+  private focusTabAfterRender(): void {
+    afterNextRender(() => this.focusSelected(), { injector: this.injector });
+  }
+
+  protected renameSize(title: string): number {
+    return Math.max(title.length + 2, 12);
   }
 
   /** Moves focus to the selected tab after the view has updated. */

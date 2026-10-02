@@ -72,6 +72,9 @@ export class KeyboardShortcutsService {
     const binding = matchBinding(event);
     if (!binding) return;
     if (!binding.reserved && this.workspace.document() === null) return;
+    // The tab rename field keeps its own native undo and redo.
+    if (!binding.reserved && (event.target as Element | null)?.closest?.('app-tab-strip input'))
+      return;
     event.preventDefault();
     event.stopPropagation();
     this.actions.execute(binding.action);
