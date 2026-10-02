@@ -1,4 +1,6 @@
-import { ChangeDetectionStrategy, Component } from '@angular/core';
+import { ChangeDetectionStrategy, Component, inject } from '@angular/core';
+import { Sample, SAMPLES } from '../../samples';
+import { FileService } from '../../services/file.service';
 import { PORT_VERSION, SOURCE_URL } from '../../version';
 
 export { PORT_VERSION };
@@ -6,7 +8,8 @@ export const PORT_URL = SOURCE_URL;
 
 /**
  * The body of the Welcome page (spec 02 §12.1, port note): a short getting-started
- * tutorial and links to the port's and the original's repositories.
+ * tutorial, sample programs that open in a new document, and links to the port's and
+ * the original's repositories.
  */
 @Component({
   selector: 'app-welcome-page',
@@ -27,6 +30,23 @@ export const PORT_URL = SOURCE_URL;
         <li>Click a line number to set a breakpoint, and Reset to start over.</li>
         <li>The Help tab below the editor explains the instruction under the cursor.</li>
       </ol>
+    </section>
+
+    <section>
+      <h2>Samples</h2>
+      <p>
+        Programs written in 2007 by one of Jasmin's original developers. Click one to open it in a
+        new document.
+      </p>
+      <ul class="samples">
+        @for (sample of samples; track sample.file) {
+          <li>
+            <a [href]="'samples/' + sample.file" (click)="open($event, sample)">{{
+              sample.title
+            }}</a>
+          </li>
+        }
+      </ul>
     </section>
 
     <section>
@@ -66,8 +86,15 @@ export const PORT_URL = SOURCE_URL;
       margin: 0;
       padding-left: 1.4em;
     }
-    li + li {
+    ol li + li {
       margin-top: var(--space-1);
+    }
+    .samples {
+      margin: 0;
+      padding: 0;
+      list-style: none;
+      columns: 3 10em;
+      column-gap: var(--space-4);
     }
     code {
       font-family: var(--font-mono);
@@ -87,4 +114,11 @@ export class WelcomePage {
   protected readonly portVersion = PORT_VERSION;
   protected readonly portUrl = PORT_URL;
   protected readonly portRepo = PORT_URL.replace('https://', '');
+  protected readonly samples = SAMPLES;
+  private readonly files = inject(FileService);
+
+  protected open(event: Event, sample: Sample): void {
+    event.preventDefault();
+    void this.files.openSample(sample);
+  }
 }

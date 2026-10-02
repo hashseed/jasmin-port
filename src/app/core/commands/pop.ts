@@ -10,6 +10,6 @@ export class Pop extends Command {
   }
 
   execute(p: Parameters): void {
-    p.pop(p.argument(0).address);
+    p.pop(p.addressOf(0));
   }
 }

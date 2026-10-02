@@ -1,5 +1,6 @@
 import { Injectable, inject } from '@angular/core';
 import { NOT_A_MEMORY_FILE } from '../core';
+import { Sample } from '../samples';
 import { DialogService } from '../ui/dialogs/dialogs';
 import { DocumentStore } from './document-store';
 import { FILE_ACCESS, FileHandle, withExtension } from './file-access';
@@ -23,6 +24,18 @@ export class FileService {
   private readonly settings = inject(SettingsService);
   private readonly access = inject(FILE_ACCESS);
   private readonly dialogs = inject(DialogService);
+
+  /** Opens a sample program from `samples/` (Welcome page) in a new document tab. */
+  async openSample(sample: Sample): Promise<DocumentStore | null> {
+    return this.guard(async () => {
+      const response = await fetch(`samples/${sample.file}`);
+      if (!response.ok) throw new Error(`Could not load ${sample.file} (${response.status})`);
+      const text = normalizeLineEndings(await response.text());
+      const doc = this.workspace.newDocument(sample.file, text);
+      doc.markSaved();
+      return doc;
+    });
+  }
 
   /** File > Open Code: opens the file in a new document tab named after it. */
   async openCode(): Promise<DocumentStore | null> {

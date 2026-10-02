@@ -102,7 +102,7 @@ npm run e2e               # Playwright end-to-end tests, including axe and perfo
 `npm run e2e` starts a dev server on port 4300. Set `PW_CHROMIUM_PATH` to use a
 preinstalled Chromium; otherwise run `npx playwright install chromium` once.
 
-The **conformance tests** run 44 assembly programs headlessly and compare the final
+The **conformance tests** run 51 assembly programs headlessly and compare the final
 machine state with outputs recorded from the original interpreter
 ([spec/08-conformance.md](spec/08-conformance.md)). To check the expectations against
 the original Java implementation itself (needs a JDK and git; it clones and compiles
