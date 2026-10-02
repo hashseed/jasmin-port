@@ -82,3 +82,23 @@ test.describe('renaming document tabs (port addition)', () => {
     await expect(tabs(page).getByRole('tab', { name: 'Welcome' })).toBeFocused();
   });
 });
+
+test.describe('closing a changed program (spec 02 §1, 07 Q-UI-5)', () => {
+  test("asks to save; Cancel keeps the tab, Don't Save closes it", async ({ page }) => {
+    await page.goto('/');
+    await page.keyboard.press('Alt+n');
+    await page.getByRole('textbox', { name: 'Program code' }).fill('nop');
+    const tab = page.getByRole('tab', { name: /new program/ });
+    // The close button is hidden from the accessibility tree; the tab is the last one.
+    const close = page.locator('button.tab-close').last();
+    await close.click();
+    const dialog = page.getByRole('dialog', { name: 'Save changes to new program?' });
+    await expect(dialog).toBeVisible();
+    await dialog.getByRole('button', { name: 'Cancel' }).click();
+    await expect(tab).toBeVisible();
+
+    await close.click();
+    await dialog.getByRole('button', { name: "Don't Save" }).click();
+    await expect(tab).toHaveCount(0);
+  });
+});

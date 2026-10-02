@@ -61,8 +61,15 @@ class FakeFileAccess implements FileAccess {
 
 class FakeDialogs {
   readonly messages: string[] = [];
+  readonly questions: string[] = [];
+  /** The answers the next choice dialogs give, in order (null = Cancel). */
+  readonly answers: (number | null)[] = [];
   async message(text: string): Promise<void> {
     this.messages.push(text);
+  }
+  async choose(text: string): Promise<number | null> {
+    this.questions.push(text);
+    return this.answers.shift() ?? null;
   }
 }
 
@@ -241,5 +248,60 @@ describe('FileService (spec 02 §13, 09 §2, §4)', () => {
   it('Load Memory without a document does nothing', async () => {
     expect(await files.loadMemory(null)).toBe(false);
     expect(fs.calls).toEqual([]);
+  });
+
+  describe('closing a modified document asks to save (02 §1, 07 Q-UI-5)', () => {
+    it('closes an unmodified document without asking', async () => {
+      const doc = workspace.newDocument('prog.asm', 'nop');
+      doc.markSaved();
+      expect(await files.closeSelected()).toBe(true);
+      expect(workspace.tabs()).toEqual([]);
+      expect(dialogs.questions).toEqual([]);
+    });
+
+    it('Cancel keeps the tab', async () => {
+      workspace.newDocument().setText('nop');
+      dialogs.answers.push(null);
+      expect(await files.closeSelected()).toBe(false);
+      expect(dialogs.questions).toEqual(['Save changes to new program?']);
+      expect(workspace.tabs().length).toBe(1);
+    });
+
+    it("Don't Save closes without saving", async () => {
+      workspace.newDocument().setText('nop');
+      dialogs.answers.push(1);
+      expect(await files.closeSelected()).toBe(true);
+      expect(workspace.tabs()).toEqual([]);
+      expect(fs.files.size).toBe(0);
+    });
+
+    it('Save saves, then closes; a cancelled save keeps the tab', async () => {
+      const doc = workspace.newDocument();
+      doc.setText('nop');
+      fs.nextSaveName = null;
+      dialogs.answers.push(0);
+      expect(await files.closeSelected()).toBe(false);
+      expect(workspace.tabs().length).toBe(1);
+
+      fs.nextSaveName = undefined;
+      dialogs.answers.push(0);
+      expect(await files.closeSelected()).toBe(true);
+      expect(fs.files.get('new program.asm')).toBe('nop');
+      expect(workspace.tabs()).toEqual([]);
+    });
+
+    it('Exit asks for each modified document, selecting it, and stops at Cancel', async () => {
+      workspace.newDocument('a.asm').setText('nop');
+      const b = workspace.newDocument('b.asm');
+      b.markSaved();
+      const c = workspace.newDocument('c.asm');
+      c.setText('hlt');
+      workspace.openHelp('welcome');
+      dialogs.answers.push(1, null);
+      expect(await files.closeAll()).toBe(false);
+      expect(dialogs.questions).toEqual(['Save changes to a.asm?', 'Save changes to c.asm?']);
+      expect(workspace.document()).toBe(c);
+      expect(workspace.tabs().map((t) => t.id)).toEqual([`doc-${c.id}`, workspace.tabs()[1].id]);
+    });
   });
 });

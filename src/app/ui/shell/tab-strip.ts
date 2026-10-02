@@ -11,6 +11,7 @@ import {
 import { LucideX } from '@lucide/angular';
 import { ActionsService } from '../../services/actions.service';
 import { DocumentStore } from '../../services/document-store';
+import { FileService } from '../../services/file.service';
 import { Tab, WorkspaceService } from '../../services/workspace.service';
 import { rovingIndex } from '../common/roving-focus';
 
@@ -70,7 +71,7 @@ import { rovingIndex } from '../common/roving-focus';
             tabindex="-1"
             aria-hidden="true"
             title="Close Tab"
-            (click)="workspace.close(tab.id)"
+            (click)="close(tab.id)"
           >
             <svg lucideX [size]="14"></svg>
           </button>
@@ -181,6 +182,7 @@ import { rovingIndex } from '../common/roving-focus';
 })
 export class TabStrip {
   protected readonly workspace = inject(WorkspaceService);
+  private readonly files = inject(FileService);
   protected readonly closeTab = inject(ActionsService).actions.closeTab;
 
   private readonly host = inject<ElementRef<HTMLElement>>(ElementRef);
@@ -199,8 +201,7 @@ export class TabStrip {
     }
     if (event.key === 'Delete' && current >= 0) {
       event.preventDefault();
-      this.workspace.close(tabs[current].id);
-      this.focusSelected();
+      void this.files.closeTab(tabs[current].id).then(() => this.focusSelected());
       return;
     }
     const next = rovingIndex(event, current, tabs.length, 'horizontal');
@@ -208,6 +209,11 @@ export class TabStrip {
     event.preventDefault();
     this.workspace.select(tabs[next].id);
     this.focusSelected();
+  }
+
+  /** The close button: asks to save unsaved changes first. */
+  protected close(id: string): void {
+    void this.files.closeTab(id);
   }
 
   /** Replaces a document tab's label with a text field holding its title, all selected. */

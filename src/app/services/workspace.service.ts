@@ -120,8 +120,8 @@ export class WorkspaceService {
   );
 
   constructor() {
-    // Q-UI-5 (spec 02 §1 port note): the only unsaved-changes prompt is the
-    // browser's own, and the listener is registered only while there are edits.
+    // Q-UI-5 (spec 02 §1 port note): the browser's own unsaved-changes prompt,
+    // registered only while there are edits. Closing a tab asks in FileService.closeTab.
     const win = inject(DOCUMENT).defaultView;
     const onBeforeUnload = (event: BeforeUnloadEvent) => {
       event.preventDefault();
