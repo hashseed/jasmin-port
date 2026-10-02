@@ -144,6 +144,42 @@ The UI never computes machine behavior itself: each command goes to the session 
 re-render from the machine state. Syntax highlighting comes from the same parser, so
 colors always agree with what the interpreter thinks a token is.
 
+## How this port was made
+
+The port was written by an AI model, **Claude Opus 5.5** by Anthropic, working in
+Claude Code under the direction of [@hashseed](https://github.com/hashseed), who set
+the goals, made the decisions where behavior was open, and reviewed the results;
+the model read the original source, wrote the specification, the code and the tests,
+and opened every pull request. The method was built so that "it behaves like the
+original" is checked, not assumed:
+
+1. **Specification first.** Before any code, the model read the Java source (pinned
+   at upstream commit `9bb04d1`, version 1.5.11) and wrote down its behavior in
+   [`spec/`](spec/README.md): the UI, the assembly language, the machine and execution
+   model, every instruction, the I/O devices and file formats.
+2. **Known quirks, decided by a person.** Bugs and oddities found in the original are
+   listed in [`spec/07-known-quirks.md`](spec/07-known-quirks.md), each marked FIX or
+   KEEP. A person made those calls; the port follows them.
+3. **Conformance against the original.** 44 assembly programs (two from upstream's
+   own tests) run headlessly against the original Java interpreter, through a small
+   harness in [`spec/reference-harness/`](spec/reference-harness), and against the
+   port's interpreter core. Their outputs must match, except where a FIX decision
+   changes them (recorded as `.port.expected`). CI blocks on this check.
+4. **A plan in milestones.** [`docs/plan.md`](docs/plan.md) chose the stack and split
+   the work into ten milestones (scaffold, core, instructions, run control, shell,
+   panels, help, devices, files, polish). Each milestone was one pull request,
+   independent milestones were built in parallel, and a milestone landed only with
+   CI green: lint, type checks, unit tests, conformance and Playwright end-to-end
+   tests, including accessibility checks with axe.
+5. **Visual review.** Screenshots of each milestone were compared with screenshots of
+   the original in `reference/screenshots/`, and the owner's feedback on them (for
+   example, equal gaps between all sections) became tests.
+
+The interpreter core is a framework-free TypeScript port of the Java classes, so the
+same code runs the conformance suite in Node and the app in the browser. Where the
+spec was open, the model chose a default and documented it as a *port note* in the
+spec and in the pull request.
+
 ## The original
 
 - Source: <https://github.com/TUM-LRR/Jasmin> (last release 1.5.11, 2016)
