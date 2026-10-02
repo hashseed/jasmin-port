@@ -1,6 +1,6 @@
 import { Signal, WritableSignal, computed, signal } from '@angular/core';
 import { MachineSession, SessionEvent } from '../core';
-import { DeviceSet } from '../devices';
+import { DeviceKind, DeviceSet } from '../devices';
 import type { FileHandle } from './file-access';
 
 /**
@@ -69,6 +69,8 @@ export class DocumentStore {
   readonly layout: SplitLayout;
   /** The I/O devices of the bottom pane (spec 06); their configuration lives as long as the tab. */
   readonly devices: DeviceSet;
+  /** The selected tab of the bottom pane (spec 02 §5): context help or a device. */
+  readonly bottomTab = signal<'Help' | DeviceKind>('Help');
 
   private readonly unsubscribe: () => void;
 

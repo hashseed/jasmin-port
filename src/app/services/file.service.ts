@@ -33,6 +33,7 @@ export class FileService {
       const text = normalizeLineEndings(await response.text());
       const doc = this.workspace.newDocument(sample.file, text);
       doc.markSaved();
+      if (sample.device) doc.bottomTab.set(sample.device);
       return doc;
     });
   }

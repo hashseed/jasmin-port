@@ -1,10 +1,10 @@
 import {
   ChangeDetectionStrategy,
   Component,
+  computed,
   ElementRef,
   inject,
   input,
-  signal,
 } from '@angular/core';
 import { DocumentStore } from '../../services/document-store';
 import { ConsoleView } from '../devices/console-view';
@@ -50,7 +50,7 @@ const DEVICE_TABS: ReadonlySet<BottomTab> = new Set([
           [attr.aria-controls]="idPrefix() + '-panel'"
           [tabindex]="tab === selected() ? 0 : -1"
           [class.selected]="tab === selected()"
-          (click)="selected.set(tab)"
+          (click)="doc().bottomTab.set(tab)"
           (keydown)="onKey($event)"
         >
           {{ tab }}
@@ -148,7 +148,7 @@ export class BottomPane {
   readonly doc = input.required<DocumentStore>();
   protected readonly deviceTabs = DEVICE_TABS;
   protected readonly tabs = BOTTOM_TABS;
-  protected readonly selected = signal<BottomTab>('Help');
+  protected readonly selected = computed(() => this.doc().bottomTab());
   private readonly host = inject<ElementRef<HTMLElement>>(ElementRef);
 
   /** Up/Down/Home/End move between the tabs; selection follows focus. */
@@ -161,7 +161,7 @@ export class BottomPane {
     );
     if (next === null) return;
     event.preventDefault();
-    this.selected.set(this.tabs[next]);
+    this.doc().bottomTab.set(this.tabs[next]);
     this.host.nativeElement
       .querySelector<HTMLElement>(`[id="${this.idPrefix()}-tab-${next}"]`)
       ?.focus();

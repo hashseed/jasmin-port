@@ -53,6 +53,17 @@ test.describe('help tabs (spec 02 §12)', () => {
       'true',
     );
     await expect(page.locator('.cm-content')).toContainText('outer_loop:');
+
+    await page.getByRole('tab', { name: 'Welcome' }).click();
+    await page.getByRole('link', { name: 'Counter (7-Segment)' }).click();
+    await expect(page.getByRole('tab', { name: 'counter.asm' })).toHaveAttribute(
+      'aria-selected',
+      'true',
+    );
+    await expect(page.getByRole('tab', { name: '7-Segment' })).toHaveAttribute(
+      'aria-selected',
+      'true',
+    );
   });
 
   test('Welcome links: New File creates a document, Open File opens one', async ({ page }) => {

@@ -1,5 +1,5 @@
 import { ChangeDetectionStrategy, Component, inject } from '@angular/core';
-import { Sample, SAMPLES } from '../../samples';
+import { ALGORITHM_SAMPLES, DEVICE_SAMPLES, Sample } from '../../samples';
 import { FileService } from '../../services/file.service';
 import { PORT_VERSION, SOURCE_URL } from '../../version';
 
@@ -34,12 +34,20 @@ export const PORT_URL = SOURCE_URL;
 
     <section>
       <h2>Samples</h2>
-      <p>
-        Programs written in 2007 by one of Jasmin's original developers. Click one to open it in a
-        new document.
-      </p>
+      <p>Click a sample to open it in a new document.</p>
+      <p class="group">Algorithms, written in 2007 by one of Jasmin's original developers:</p>
       <ul class="samples">
-        @for (sample of samples; track sample.file) {
+        @for (sample of algorithms; track sample.file) {
+          <li>
+            <a [href]="'samples/' + sample.file" (click)="open($event, sample)">{{
+              sample.title
+            }}</a>
+          </li>
+        }
+      </ul>
+      <p class="group">I/O devices, shown in a tab below the editor:</p>
+      <ul class="samples">
+        @for (sample of devices; track sample.file) {
           <li>
             <a [href]="'samples/' + sample.file" (click)="open($event, sample)">{{
               sample.title
@@ -96,6 +104,11 @@ export const PORT_URL = SOURCE_URL;
       columns: 3 10em;
       column-gap: var(--space-4);
     }
+    .group {
+      margin-top: var(--space-3);
+      margin-bottom: var(--space-1);
+      color: var(--text-muted);
+    }
     code {
       font-family: var(--font-mono);
       font-size: 13px;
@@ -114,7 +127,8 @@ export class WelcomePage {
   protected readonly portVersion = PORT_VERSION;
   protected readonly portUrl = PORT_URL;
   protected readonly portRepo = PORT_URL.replace('https://', '');
-  protected readonly samples = SAMPLES;
+  protected readonly algorithms = ALGORITHM_SAMPLES;
+  protected readonly devices = DEVICE_SAMPLES;
   private readonly files = inject(FileService);
 
   protected open(event: Event, sample: Sample): void {
