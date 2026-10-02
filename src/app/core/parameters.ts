@@ -152,9 +152,7 @@ export class Parameters {
 
   /** `put` of an exact integer number. */
   putNum(index: number, value: number, info: MemCellInfo | null): void {
-    const arg = this.argument(index);
-    if (arg.cAddress) arg.address.address = arg.cAddress.calculateEffectiveAddress(true);
-    if (arg.address.dynamic) this.dsp.putNum(value, arg.address, info);
+    this.putAddressNum(this.addressOf(index), value, info);
   }
 
   get(index: number): bigint {
