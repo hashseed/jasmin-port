@@ -17,6 +17,7 @@ import {
   viewChild,
 } from '@angular/core';
 import { DocumentStore } from '../../../services/document-store';
+import { inViewport, liveVersion } from '../../common/in-viewport';
 import { SegmentedControl, SegmentedToggles, ToggleOption } from '../../common/segmented-control';
 import { EditCell } from '../edit-cell';
 import { MemoryColumn, formatAddress } from '../radix';
@@ -34,6 +35,7 @@ export const MEMORY_ROW_HEIGHT = 20;
 @Component({
   selector: 'app-memory-panel',
   changeDetection: ChangeDetectionStrategy.OnPush,
+  host: { '[class.running]': 'doc().running()' },
   imports: [ScrollingModule, SegmentedControl, SegmentedToggles, EditCell],
   providers: [
     {
@@ -163,6 +165,10 @@ export const MEMORY_ROW_HEIGHT = 20;
       font-weight: 700;
       animation: changed-accent 0.8s ease-out;
     }
+    /* No accent while Run refreshes the panel live: it would repaint every frame. */
+    :host(.running) .changed {
+      animation: none;
+    }
     .address {
       color: var(--text-muted);
     }
@@ -201,6 +207,8 @@ export class MemoryPanel {
   readonly doc = input.required<DocumentStore>();
   /** The `highlight` toggle, shared with the registers panel (spec 02 §7.2). */
   readonly highlight = model(false);
+  /** The document's version; out of view, live refreshes are skipped. */
+  private readonly version = liveVersion(this.doc, inViewport());
 
   private readonly strategy = inject(VIRTUAL_SCROLL_STRATEGY) as RowScrollStrategy;
   private readonly viewport = viewChild.required(CdkVirtualScrollViewport);
@@ -223,7 +231,7 @@ export class MemoryPanel {
 
   protected readonly rowCount = computed(() => {
     const doc = this.doc();
-    doc.version();
+    this.version();
     return memoryRowCount(doc.session.dsp, this.width());
   });
 
@@ -233,7 +241,7 @@ export class MemoryPanel {
    */
   protected readonly columns = computed(() => {
     const doc = this.doc();
-    doc.version();
+    this.version();
     const dsp = doc.session.dsp;
     const last = dsp.offset + dsp.memorySize - 1;
     const address = formatAddress(last, this.hexAddress()).length;
@@ -243,7 +251,7 @@ export class MemoryPanel {
 
   protected readonly rows = computed(() => {
     const doc = this.doc();
-    doc.version();
+    this.version();
     const { start, end } = this.strategy.window();
     return memoryRows(doc.session.dsp, start, end, {
       width: this.width(),

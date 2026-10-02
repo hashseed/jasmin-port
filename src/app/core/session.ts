@@ -16,6 +16,12 @@ export interface Scheduler {
   setTimeout(callback: () => void, ms: number): unknown;
   clearTimeout(handle: unknown): void;
   now(): number;
+  /**
+   * Calls `callback` before the next frame is rendered (`requestAnimationFrame`).
+   * Without it, live refreshes happen right away, within Run's time slice.
+   */
+  requestFrame?(callback: () => void): unknown;
+  cancelFrame?(handle: unknown): void;
 }
 
 /** A pending zero-delay callback of an event-loop scheduler. */
@@ -29,6 +35,8 @@ export interface TimerHost {
   clearTimeout(handle: unknown): void;
   setImmediate?: (callback: () => void) => unknown;
   MessageChannel?: typeof MessageChannel;
+  requestAnimationFrame?: (callback: () => void) => number;
+  cancelAnimationFrame?: (handle: number) => void;
 }
 
 /**
@@ -65,11 +73,21 @@ function zeroDelay(host: TimerHost): (y: Yield) => void {
 
 /**
  * A scheduler on the event loop of `host`: delays use `setTimeout`, zero delays
- * (Run's yields between time slices) skip the browsers' nested-timeout clamp.
+ * (Run's yields between time slices) skip the browsers' nested-timeout clamp,
+ * and frames use `requestAnimationFrame` where it exists (browsers).
  */
 export function eventLoopScheduler(host: TimerHost = globalThis as TimerHost): Scheduler {
   let post: ((y: Yield) => void) | null = null;
+  const { requestAnimationFrame: request, cancelAnimationFrame: cancel } = host;
+  const frames: Pick<Scheduler, 'requestFrame' | 'cancelFrame'> =
+    typeof request === 'function' && typeof cancel === 'function'
+      ? {
+          requestFrame: (callback) => request.call(host, () => callback()),
+          cancelFrame: (handle) => cancel.call(host, handle as number),
+        }
+      : {};
   return {
+    ...frames,
     setTimeout: (callback, ms) => {
       if (ms > 0) return host.setTimeout(callback, ms);
       const y = new Yield(callback);
@@ -86,6 +104,8 @@ export function eventLoopScheduler(host: TimerHost = globalThis as TimerHost): S
 
 export const DEFAULT_SCHEDULER: Scheduler = eventLoopScheduler();
 
+const LIVE_REFRESH: SessionEvent = { kind: 'refresh', reset: false, live: true };
+
 export interface SessionOptions {
   /** Longest stretch of Run work before yielding to the event loop, in ms. */
   readonly sliceMs?: number;
@@ -96,8 +116,12 @@ export interface SessionOptions {
 }
 
 export type SessionEvent =
-  /** Machine state changed: refresh all panels (spec 04 §9.6). */
-  | { readonly kind: 'refresh'; readonly reset: boolean }
+  /**
+   * Machine state changed: refresh all panels (spec 04 §9.6). `live`: a refresh
+   * during Run (spec 04 §9.3), which panels that are not visible may skip; Run
+   * ends with a refresh that is not live.
+   */
+  | { readonly kind: 'refresh'; readonly reset: boolean; readonly live?: boolean }
   /** Run started or stopped. When it stops, scroll to the execution mark. */
   | { readonly kind: 'running'; readonly running: boolean }
   /** Load Memory replaced the DataSpace (new memory size or offset). */
@@ -125,6 +149,8 @@ export class MachineSession {
   private readonly batchSteps: number;
   private readonly liveRefreshMs: number;
   private lastLiveRefresh = 0;
+  /** The requested frame of the next live refresh, or null. */
+  private frame: unknown = null;
   private readonly isBreakpoint = (line: number) => this.breakpointLines.has(line);
 
   constructor(
@@ -314,18 +340,37 @@ export class MachineSession {
     }
   }
 
-  /** Lets the panels follow a run in progress, at most every `liveRefreshMs` (spec 04 §9.3). */
+  /**
+   * Lets the panels follow a run in progress, at most every `liveRefreshMs` and
+   * once per frame (spec 04 §9.3). The refresh runs in the frame callback, outside
+   * the time slice, and shows the state as of then; a frame already requested
+   * covers later slices too.
+   */
   private liveRefresh(): void {
+    if (this.frame !== null) return;
     const now = this.scheduler.now();
     if (now - this.lastLiveRefresh < this.liveRefreshMs) return;
-    this.lastLiveRefresh = now;
-    this.emit({ kind: 'refresh', reset: false });
+    if (!this.scheduler.requestFrame) {
+      this.lastLiveRefresh = now;
+      this.emit(LIVE_REFRESH);
+      return;
+    }
+    this.frame = this.scheduler.requestFrame(() => {
+      this.frame = null;
+      if (!this.isRunning) return;
+      this.lastLiveRefresh = this.scheduler.now();
+      this.emit(LIVE_REFRESH);
+    });
   }
 
   private finishRun(): void {
     if (this.timer !== null) {
       this.scheduler.clearTimeout(this.timer);
       this.timer = null;
+    }
+    if (this.frame !== null) {
+      this.scheduler.cancelFrame?.(this.frame);
+      this.frame = null;
     }
     this.isRunning = false;
     this.interpreter.endRun();

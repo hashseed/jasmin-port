@@ -18,6 +18,7 @@ import {
   parseDeviceAddress,
 } from '../../devices';
 import { DocumentStore } from '../../services/document-store';
+import { inViewport } from '../common/in-viewport';
 import { DialogService } from '../dialogs/dialogs';
 
 export interface DeviceMenuItem {
@@ -103,18 +104,29 @@ export class DeviceDialogs {
 
 /**
  * Repaints a device view when the document's devices report a write to its bytes
- * or a full refresh; follows the document input. Call in an injection context.
+ * or a full refresh; follows the document input. A view out of view (a hidden
+ * document tab) repaints when it is shown again instead. Call in an injection
+ * context.
  */
 export function repaintOnChange(
   doc: Signal<DocumentStore>,
   device: DeviceKind,
   invalidate: () => void,
 ): void {
+  const visible = inViewport();
+  let stale = false;
   effect((onCleanup) => {
     const unsubscribe = doc().devices.subscribe((change) => {
-      if (change.kind === 'refresh' || change.device === device) invalidate();
+      if (change.kind !== 'refresh' && change.device !== device) return;
+      if (visible()) invalidate();
+      else stale = true;
     });
     invalidate();
     onCleanup(unsubscribe);
+  });
+  effect(() => {
+    if (!visible() || !stale) return;
+    stale = false;
+    invalidate();
   });
 }

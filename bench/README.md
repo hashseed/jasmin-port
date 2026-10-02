@@ -87,8 +87,24 @@ Before, a run in the app took five times as long as headless:
   within a slice (about 10 ms) and rendering keeps 60 frames per second; a
   `setTimeout(0)` started during a run waits about 21 ms instead of 11 ms.
 
-The rest of the gap to headless is mostly the live refresh of the panels every 100 ms
-(about 10 ms of rendering each, some 12 % of the run; without it, 10,000 entries take
-about 2.5 s), which is kept so that the panels follow a run. A `MachineSession` with
-devices in Node, which also pays for the time slicing, went from 6.4 s to 2.15 s for
-10,000 entries.
+The rest of the gap to headless is mostly the live refresh of the panels every 100 ms,
+which is kept so that the panels follow a run (without it, 10,000 entries take about
+2.55 s). A `MachineSession` with devices in Node, which also pays for the time slicing,
+went from 6.4 s to 2.15 s for 10,000 entries.
+
+The live refresh cost about 15 ms per refresh, some 15 % of the run. A trace of 10,000
+entries (about 30 refreshes) showed where: the accent animation of changed register
+fields and memory rows kept the page repainting in every frame (about 130 ms of paint
+and style), the editor re-highlighted its text inside Run's time slice and re-measured
+its layout in the next frame (about 130 ms), Angular's change detection (about 40 ms),
+and the layout and paint of the changed values (about 150 ms). Now (spec 04 §9.3) the
+refresh is done in an animation frame, the accent animation is off while running, the
+editor only moves its execution mark, the devices repaint only on writes to their bytes,
+and panels out of view skip live refreshes until they are shown. What remains is
+change detection and the layout and paint of the values that changed, about 10 ms per
+refresh. Medians of 12 alternating `bench:browser` runs each, in ms:
+
+| Entries | Before | After |
+| ------: | -----: | ----: |
+|   1,000 |    102 |   102 |
+|  10,000 |  3,040 | 2,865 |

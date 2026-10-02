@@ -1,6 +1,7 @@
 import { ChangeDetectionStrategy, Component, computed, input } from '@angular/core';
 import { FlagState } from '../../../core';
 import { DocumentStore } from '../../../services/document-store';
+import { inViewport, liveVersion } from '../../common/in-viewport';
 
 type FlagKey = keyof FlagState;
 
@@ -50,10 +51,12 @@ export const FLAG_CHECKBOXES: readonly { readonly flag: FlagKey; readonly label:
 })
 export class FlagsPanel {
   readonly doc = input.required<DocumentStore>();
+  /** The document's version; out of view, live refreshes are skipped. */
+  private readonly version = liveVersion(this.doc, inViewport());
 
   protected readonly flags = computed(() => {
     const doc = this.doc();
-    doc.version();
+    this.version();
     const state = doc.session.dsp.flags;
     return FLAG_CHECKBOXES.map((item) => ({ ...item, set: state[item.flag] }));
   });

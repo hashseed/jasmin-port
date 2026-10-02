@@ -2,6 +2,8 @@ import { Type } from '@angular/core';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { MachineSession } from '../../core';
 import { DocumentStore } from '../../services/document-store';
+import { handSession } from '../../services/test-session';
+import { FakeIntersectionObserver } from '../common/test-viewport';
 import { FpuPanel } from './fpu/fpu-panel';
 import { MemoryPanel } from './memory/memory-panel';
 import { FlagsPanel } from './registers/flags-panel';
@@ -122,5 +124,71 @@ describe('data panels', () => {
       ['16Bit', 'false'],
       ['32Bit', 'true'],
     ]);
+  });
+});
+
+describe('live refresh during Run (spec 04 §9.3)', () => {
+  beforeEach(() => FakeIntersectionObserver.install());
+  afterEach(() => FakeIntersectionObserver.uninstall());
+
+  async function running() {
+    const { session, scheduler } = handSession('top: inc eax\njmp top');
+    const doc = new DocumentStore(session);
+    const registers = await render(RegistersPanel, doc);
+    const fpu = await render(FpuPanel, doc);
+    const eax = () => session.dsp.registers.get(session.dsp.EAX);
+    const shown = () => Number(input(registers.element, 'EAX').value);
+    /** One slice of Run, then a frame, then Angular renders. */
+    const advance = async () => {
+      scheduler.slice();
+      scheduler.frame();
+      await registers.fixture.whenStable();
+    };
+    doc.run();
+    return { doc, registers, fpu, eax, shown, advance };
+  }
+
+  it('a visible panel follows the run', async () => {
+    const { doc, eax, shown, advance } = await running();
+    await advance();
+    const first = shown();
+    expect(first).toBeGreaterThan(0);
+    expect(first).toBe(eax());
+    await advance();
+    expect(shown()).toBeGreaterThan(first);
+    expect(shown()).toBe(eax());
+    doc.pause();
+  });
+
+  it('a hidden panel skips live refreshes and catches up when shown', async () => {
+    const { doc, registers, eax, shown, advance } = await running();
+    await advance();
+    FakeIntersectionObserver.show(false);
+    await registers.fixture.whenStable();
+    const before = shown();
+    await advance();
+    await advance();
+    expect(eax()).toBeGreaterThan(before);
+    expect(shown()).toBe(before);
+
+    FakeIntersectionObserver.show(true);
+    await registers.fixture.whenStable();
+    expect(shown()).toBe(eax());
+    doc.pause();
+  });
+
+  it('Pause refreshes hidden panels to the exact final state', async () => {
+    const { doc, registers, fpu, eax, shown, advance } = await running();
+    FakeIntersectionObserver.show(false);
+    await advance();
+    await advance();
+    doc.pause();
+    await registers.fixture.whenStable();
+    await fpu.fixture.whenStable();
+    expect(eax()).toBeGreaterThan(0);
+    expect(shown()).toBe(eax());
+    // Nothing more runs or refreshes after Pause.
+    await advance();
+    expect(shown()).toBe(eax());
   });
 });

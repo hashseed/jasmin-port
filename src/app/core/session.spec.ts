@@ -202,6 +202,100 @@ describe('Run (spec 04 §9.3)', () => {
     s.pause();
   });
 
+  describe('with animation frames', () => {
+    /** A FakeScheduler with frames, which the test renders by hand. */
+    class FrameScheduler extends FakeScheduler {
+      private frames = new Map<number, () => void>();
+      private nextFrame = 1;
+      requested = 0;
+
+      requestFrame(callback: () => void): unknown {
+        this.requested++;
+        const id = this.nextFrame++;
+        this.frames.set(id, callback);
+        return id;
+      }
+
+      cancelFrame(handle: unknown): void {
+        this.frames.delete(handle as number);
+      }
+
+      get pendingFrames(): number {
+        return this.frames.size;
+      }
+
+      /** Renders a frame: runs the callbacks requested before it. */
+      frame(): void {
+        const callbacks = [...this.frames.values()];
+        this.frames.clear();
+        for (const callback of callbacks) callback();
+      }
+    }
+
+    function live(scheduler: FrameScheduler) {
+      const { s } = session('top: inc eax\njmp top', scheduler);
+      const events: { live: boolean; eax: number }[] = [];
+      s.subscribe((e) => {
+        if (e.kind === 'refresh') events.push({ live: e.live ?? false, eax: reg(s, 'EAX') });
+      });
+      return { s, events };
+    }
+
+    it('refreshes in the frame, at most once per frame, with one frame pending', () => {
+      const scheduler = new FrameScheduler();
+      const { s, events } = live(scheduler);
+      s.run();
+      // Many slices, but no frame rendered: one frame requested, nothing refreshed yet.
+      scheduler.advance(1000);
+      expect([scheduler.requested, scheduler.pendingFrames, events.length]).toEqual([1, 1, 0]);
+
+      scheduler.frame();
+      expect(events).toEqual([{ live: true, eax: reg(s, 'EAX') }]);
+      expect(scheduler.pendingFrames).toBe(0);
+      // Rendering again without a slice in between does not refresh again.
+      scheduler.frame();
+      expect(events.length).toBe(1);
+
+      // The next frame is requested only after liveRefreshMs (100 ms).
+      scheduler.advance(50);
+      expect(scheduler.pendingFrames).toBe(0);
+      scheduler.advance(100);
+      expect(scheduler.pendingFrames).toBe(1);
+      scheduler.frame();
+      expect(events.length).toBe(2);
+      expect(events[1].eax).toBeGreaterThan(events[0].eax);
+      s.pause();
+    });
+
+    it('Pause cancels the pending frame and refreshes the final state at once', () => {
+      const scheduler = new FrameScheduler();
+      const { s, events } = live(scheduler);
+      s.run();
+      scheduler.advance(1000);
+      expect(scheduler.pendingFrames).toBe(1);
+      s.pause();
+      expect(scheduler.pendingFrames).toBe(0);
+      expect(events).toEqual([{ live: false, eax: reg(s, 'EAX') }]);
+      expect(reg(s, 'EAX')).toBeGreaterThan(0);
+      // A frame that fires after the run anyway changes nothing.
+      scheduler.frame();
+      expect(events.length).toBe(1);
+    });
+
+    it('a run that ends between frames refreshes once, not live', () => {
+      const scheduler = new FrameScheduler();
+      const { s } = session('mov ecx, 2000\nl: inc eax\nloop l', scheduler);
+      const events: boolean[] = [];
+      s.subscribe((e) => e.kind === 'refresh' && events.push(e.live ?? false));
+      s.run();
+      scheduler.advance(10_000);
+      expect(s.running).toBe(false);
+      scheduler.frame();
+      expect(events).toEqual([false]);
+      expect(reg(s, 'EAX')).toBe(2000);
+    });
+  });
+
   it('waits for JASMINSLEEP, and Pause cuts it short', () => {
     const { s, scheduler } = session('jasminsleep 500\nmov eax, 1');
     s.run();
@@ -382,6 +476,22 @@ describe('event-loop scheduler', () => {
     expect(calls).toEqual(['a', 'b', 'timer']);
     // Only the real delays went to setTimeout.
     expect(timeouts).toEqual([5, 10]);
+  });
+
+  it('uses requestAnimationFrame for frames where the host has it', () => {
+    expect(eventLoopScheduler(host(true).host).requestFrame).toBeUndefined();
+    const requested: (() => void)[] = [];
+    const cancelled: number[] = [];
+    const scheduler = eventLoopScheduler({
+      ...host(true).host,
+      requestAnimationFrame: (callback) => requested.push(callback),
+      cancelAnimationFrame: (handle) => cancelled.push(handle),
+    });
+    let calls = 0;
+    const handle = scheduler.requestFrame!(() => calls++);
+    requested[0]();
+    scheduler.cancelFrame!(handle);
+    expect([calls, cancelled]).toEqual([1, [1]]);
   });
 
   it.each([true, false])(

@@ -2,7 +2,8 @@ import { TestBed } from '@angular/core/testing';
 import { EditorSelection } from '@codemirror/state';
 import { EditorView } from '@codemirror/view';
 import { DocumentStore } from '../../services/document-store';
-import { frozenSessionFactory } from '../../services/test-session';
+import { frozenSessionFactory, handSession } from '../../services/test-session';
+import { FakeIntersectionObserver } from '../common/test-viewport';
 import { DEFAULT_MACHINE_CONFIG } from '../../core';
 import { CodeEditor, fontFamily } from './code-editor';
 import { insertNewlineKeepIndent } from './jasmin-extensions';
@@ -67,6 +68,54 @@ describe('CodeEditor', () => {
     expect(view.contentDOM.getAttribute('contenteditable')).toBe('false');
     doc.pause();
     expect(view.state.readOnly).toBe(false);
+  });
+
+  describe('while running', () => {
+    beforeEach(() => FakeIntersectionObserver.install());
+    afterEach(() => FakeIntersectionObserver.uninstall());
+
+    /** The zero-based line with the execution mark, or -1. */
+    const markedLine = (view: EditorView) =>
+      [...view.contentDOM.querySelectorAll('.cm-line')].findIndex((line) =>
+        line.classList.contains('jas-exec-line'),
+      );
+
+    it('moves the execution mark live, and only while visible', async () => {
+      const { session, scheduler } = handSession('top: inc eax\ninc ebx\njmp top');
+      const doc = new DocumentStore(session);
+      const fixture = TestBed.createComponent(CodeEditor);
+      fixture.componentRef.setInput('doc', doc);
+      await fixture.whenStable();
+      const view = fixture.componentInstance.editorView as EditorView;
+      const eip = () => session.dsp.getInstructionPointer();
+      /** Runs slices until Run stops at a line other than the marked one, then a frame. */
+      const moveRun = () => {
+        const from = markedLine(view);
+        do scheduler.slice();
+        while (eip() === from);
+        scheduler.frame();
+      };
+
+      doc.run();
+      moveRun();
+      expect(markedLine(view)).toBe(eip());
+
+      FakeIntersectionObserver.show(false);
+      await fixture.whenStable();
+      const hidden = markedLine(view);
+      moveRun();
+      expect(eip()).not.toBe(hidden);
+      expect(markedLine(view)).toBe(hidden);
+
+      FakeIntersectionObserver.show(true);
+      await fixture.whenStable();
+      expect(markedLine(view)).toBe(eip());
+
+      FakeIntersectionObserver.show(false);
+      moveRun();
+      doc.pause();
+      expect(markedLine(view)).toBe(eip());
+    });
   });
 
   it('maps Java logical fonts', () => {

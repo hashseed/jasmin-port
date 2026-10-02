@@ -26,12 +26,14 @@ import { EditorView, keymap } from '@codemirror/view';
 import { MachineSession, SessionEvent } from '../../core';
 import { DocumentStore, EditorHandle } from '../../services/document-store';
 import { SettingsService } from '../../services/settings.service';
+import { inViewport } from '../common/in-viewport';
 import { MenuEntries, MenuPanel } from '../shell/menu-panel';
 import {
   EditorHost,
   insertNewlineKeepIndent,
   insertTabCharacter,
   jasminEditor,
+  markEffect,
   refreshEffect,
   scrollToMark,
 } from './jasmin-extensions';
@@ -172,9 +174,21 @@ export class CodeEditor implements EditorHandle {
 
   private view: EditorView | null = null;
   private readonly editable = new Compartment();
+  private readonly visible = inViewport();
+  /** The EIP the execution mark was last drawn at. */
+  private mark = -1;
+  /** A live refresh came while the editor was out of view. */
+  private markStale = false;
 
   constructor() {
     afterNextRender(() => this.create());
+    // Shown again during a run: draw the mark where Run is now.
+    effect(() => {
+      if (!this.visible() || !this.markStale) return;
+      this.markStale = false;
+      const view = this.view;
+      if (view) this.moveMark(view, this.doc().session);
+    });
     // Text replaced from outside the editor (e.g. a file opened into this document).
     effect(() => {
       const text = this.doc().text();
@@ -268,11 +282,19 @@ export class CodeEditor implements EditorHandle {
   private onSessionEvent(session: MachineSession, event: SessionEvent): void {
     const view = this.view;
     if (!view) return;
+    if (event.kind === 'refresh' && event.live) {
+      if (this.visible()) this.moveMark(view, session);
+      else this.markStale = true;
+      return;
+    }
+    this.mark = session.dsp.getInstructionPointer();
     if (event.kind === 'running') {
       view.dispatch({
         effects: [this.editable.reconfigure(editableState(event.running)), refreshEffect.of(null)],
       });
-      if (!event.running) scrollToMark(view, session.dsp.getInstructionPointer());
+      // Run clears the error line when it starts (spec 04 §9.3 port note).
+      if (event.running) this.message.set('');
+      else scrollToMark(view, session.dsp.getInstructionPointer());
       return;
     }
     view.dispatch({ effects: refreshEffect.of(null) });
@@ -285,6 +307,14 @@ export class CodeEditor implements EditorHandle {
 
   private refresh(): void {
     this.view?.dispatch({ effects: refreshEffect.of(null) });
+  }
+
+  /** A live refresh: moves the execution mark, if Run moved EIP since it was drawn. */
+  private moveMark(view: EditorView, session: MachineSession): void {
+    const eip = session.dsp.getInstructionPointer();
+    if (eip === this.mark) return;
+    this.mark = eip;
+    view.dispatch({ effects: markEffect.of(null) });
   }
 
   private syncSignals(view: EditorView): void {
