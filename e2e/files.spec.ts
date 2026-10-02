@@ -242,6 +242,7 @@ test.describe('unsaved edits (07 Q-UI-5)', () => {
     await page.keyboard.type('hlt');
     await expect.poll(() => listeners(page)).toBe(base + 1);
     await fileMenu(page, 'Close Document');
+    await page.getByRole('button', { name: "Don't Save" }).click();
     await expect.poll(() => listeners(page)).toBe(base);
   });
 

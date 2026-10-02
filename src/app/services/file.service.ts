@@ -33,8 +33,45 @@ export class FileService {
       const text = normalizeLineEndings(await response.text());
       const doc = this.workspace.newDocument(sample.file, text);
       doc.markSaved();
+      if (sample.device) doc.bottomTab.set(sample.device);
       return doc;
     });
+  }
+
+  /**
+   * Closes a tab. A document with unsaved code changes first asks whether to save
+   * them (owner's request, 2026-10-02; spec 07 Q-UI-5): Save closes only once saved,
+   * Cancel keeps the tab. Resolves to whether the tab was closed.
+   */
+  async closeTab(id: string): Promise<boolean> {
+    const tab = this.workspace.tabs().find((t) => t.id === id);
+    if (!tab) return false;
+    if (tab.kind === 'document' && tab.doc.modified()) {
+      this.workspace.select(id);
+      const choice = await this.dialogs.choose(
+        `Save changes to ${tab.doc.title()}?`,
+        ['Save', "Don't Save"],
+        'Unsaved changes',
+      );
+      if (choice === null) return false;
+      if (choice === 0 && !(await this.saveCode(tab.doc))) return false;
+    }
+    this.workspace.close(id);
+    return true;
+  }
+
+  /** Close Document / Close Tab: closes the selected tab, asking to save first. */
+  async closeSelected(): Promise<boolean> {
+    const id = this.workspace.selected()?.id;
+    return id ? this.closeTab(id) : false;
+  }
+
+  /** Exit: closes every tab, asking to save each changed document; stops at Cancel. */
+  async closeAll(): Promise<boolean> {
+    for (const tab of this.workspace.tabs()) {
+      if (!(await this.closeTab(tab.id))) return false;
+    }
+    return true;
   }
 
   /** File > Open Code: opens the file in a new document tab named after it. */

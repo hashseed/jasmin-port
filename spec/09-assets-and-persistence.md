@@ -72,8 +72,8 @@ shipped; the samples may be offered as examples.
 - *Port addition:* a document is *modified* when its text differs from the text last
   opened or saved; its tab shows a small dot after the title (screen readers: "(unsaved
   changes)"). The window title does not change. While any open document is modified
-  the page registers a `beforeunload` handler (07 Q-UI-5); closing a tab still never
-  prompts.
+  the page registers a `beforeunload` handler (07 Q-UI-5), and closing its tab asks
+  whether to save (02 §1).
 - I/O errors (and `Not a Jasmin memory file.`) appear in an in-app modal message with
   the heading `Message` and an `OK` button (02 §13).
 

@@ -120,7 +120,7 @@ export class ActionsService {
     closeDocument: {
       label: 'Close Document',
       enabled: this.idle,
-      run: () => this.workspace.closeSelected(),
+      run: () => void this.files.closeSelected(),
     },
     configuration: {
       label: 'Configuration',
@@ -130,7 +130,7 @@ export class ActionsService {
     exit: {
       label: 'Exit',
       enabled: this.always,
-      run: () => this.workspace.closeAll(),
+      run: () => void this.files.closeAll(),
     },
     undo: {
       label: 'Undo',
@@ -229,7 +229,7 @@ export class ActionsService {
     closeTab: {
       label: 'Close Tab',
       enabled: computed(() => this.workspace.selected() !== null),
-      run: () => this.workspace.closeSelected(),
+      run: () => void this.files.closeSelected(),
     },
   });
 
