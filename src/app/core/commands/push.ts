@@ -15,7 +15,8 @@ export class Push extends Command {
   }
 
   execute(p: Parameters): void {
-    p.argument(0).address.size = p.size;
-    p.push(p.argument(0).address);
+    const a = p.addressOf(0);
+    a.size = p.size;
+    p.push(a);
   }
 }

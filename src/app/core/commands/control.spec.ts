@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { DataSpace } from '../data-space';
 import { Interpreter } from '../interpreter';
+import { machineStateOf } from '../state-dump';
 import { Program } from '../program';
 
 interface Run {
@@ -321,5 +322,43 @@ describe('JASMINSLEEP', () => {
   it('rejects a missing or extra operand', () => {
     expect(run('jasminsleep').errors[0]).toMatch(/^PARSE 0: /);
     expect(run('jasminsleep 1, 2').errors[0]).toMatch(/^PARSE 0: /);
+  });
+});
+
+describe('Run reuses parsed lines (07 Q-I-18)', () => {
+  /** Runs `source` with Run (parse cache on) and returns memory bytes [from, to). */
+  const runBytes = (source: string, from: number, to: number) => {
+    const dsp = new DataSpace(4096, 0);
+    const program = new Program(dsp);
+    program.setText(source);
+    const interpreter = new Interpreter(dsp, program);
+    interpreter.beginRun(() => false);
+    expect(interpreter.runSteps(1000, () => false)).toEqual({ kind: 'end' });
+    interpreter.endRun();
+    return [...machineStateOf(dsp).memory.slice(from, to)];
+  };
+  const loop = (body: string) =>
+    `mov eax, 0\nmov ecx, 3\nschleife:\n${body}\nadd eax, 4\nloop schleife`;
+
+  it('POP to memory uses the current address', () => {
+    expect(runBytes(loop('push ecx\npop dword [eax]'), 0, 12)).toEqual([
+      3, 0, 0, 0, 2, 0, 0, 0, 1, 0, 0, 0,
+    ]);
+  });
+
+  it('PUSH from memory reads the current address', () => {
+    const bytes = runBytes(
+      `mov esp, 0x800\n${loop('mov [eax], ecx\npush dword [eax]')}`,
+      0x7f4,
+      0x800,
+    );
+    expect(bytes).toEqual([1, 0, 0, 0, 2, 0, 0, 0, 3, 0, 0, 0]);
+  });
+
+  it('FPU stores to memory use the current address', () => {
+    // 1.0f is 0x3F800000.
+    expect(runBytes(loop('fld1\nfstp dword [eax]'), 0, 12)).toEqual([
+      0, 0, 0x80, 0x3f, 0, 0, 0x80, 0x3f, 0, 0, 0x80, 0x3f,
+    ]);
   });
 });
