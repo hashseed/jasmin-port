@@ -105,7 +105,15 @@ export class RegisterFile {
   }
 
   set(a: Address, value: bigint): void {
-    const shifted = Number(BigInt.asUintN(32, value << BigInt(a.rshift)));
+    this.setNum(a, Number(BigInt.asUintN(32, value)));
+  }
+
+  /**
+   * Stores the low bits of an integer `value` (any exact integer: the shift
+   * converts it to its low 32 bits, as the bigint version masks them).
+   */
+  setNum(a: Address, value: number): void {
+    const shifted = value << a.rshift;
     const old = this.values[a.address];
     this.values[a.address] = ((old & ~a.mask) | (shifted & a.mask)) >>> 0;
     this.dirty[a.address] = this.stamp;

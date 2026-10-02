@@ -10,6 +10,7 @@ import {
   parseLong,
   short,
   sizeMask,
+  TWO_32,
 } from './java';
 import { Memory } from './memory';
 import { Op, matches } from './op';
@@ -44,6 +45,8 @@ export class DataSpace {
 
   readonly memorySize: number;
   readonly offset: number;
+  /** End of memory: initial ESP and EBP, and the upper bound of the stack (07 Q-S-1). */
+  readonly memoryEnd: number;
   readonly memory: Memory;
   readonly registers = new RegisterFile();
   private readonly registerTable = new Map<string, Address>();
@@ -96,6 +99,7 @@ export class DataSpace {
   constructor(size: number, startAddress: number) {
     this.memorySize = size + 3 - ((size + 3) % 4);
     this.offset = startAddress;
+    this.memoryEnd = this.memorySize + startAddress;
     this.memory = new Memory(this.memorySize, startAddress);
     this.nextReservableAddress = startAddress;
     for (const name of ALL_REGISTER_NAMES) this.registerTable.set(name, registerAddress(name));
@@ -146,14 +150,9 @@ export class DataSpace {
     this.resetStackRegisters();
   }
 
-  /** End of memory: initial ESP and EBP, and the upper bound of the stack (07 Q-S-1). */
-  get memoryEnd(): number {
-    return this.memorySize + this.offset;
-  }
-
   private resetStackRegisters(): void {
-    this.put(BigInt(this.memoryEnd), this.ESP, null);
-    this.put(BigInt(this.memoryEnd), this.EBP, null);
+    this.putNum(this.memoryEnd, this.ESP, null);
+    this.putNum(this.memoryEnd, this.EBP, null);
     this.registers.clearDirty();
   }
 
@@ -178,7 +177,7 @@ export class DataSpace {
   }
 
   setInstructionPointer(ip: number): void {
-    this.registers.set(this.EIP, BigInt(ip));
+    this.registers.setNum(this.EIP, ip);
   }
 
   // ---- registers ----
@@ -208,6 +207,11 @@ export class DataSpace {
     return new Address(Op.MEM, size, this.registers.get(this.ESP) | 0);
   }
 
+  /** ESP as a number (`shortcut(ESP)`). */
+  get esp(): number {
+    return this.registers.get(this.ESP);
+  }
+
   // ---- flags ----
 
   get flags(): FlagState {
@@ -235,10 +239,14 @@ export class DataSpace {
   }
 
   // ---- writes ----
+  //
+  // Values are Java longs. Operands of up to 4 bytes only keep the low 32 bits, so
+  // they are written from numbers (`putNum`); bigints remain for 8-byte memory and
+  // FPU registers.
 
   private putInteger(value: bigint, a: Address): void {
-    if (a.type & Op.REG) {
-      this.registers.set(a, value);
+    if (a.type & Op.REG || a.size <= 4) {
+      this.putIntegerNum(Number(BigInt.asUintN(32, value)), a);
     } else if (a.type & Op.MEM) {
       if (a.address < this.offset || a.address + a.size > this.memoryEnd) {
         this.outOfRange = true;
@@ -252,16 +260,57 @@ export class DataSpace {
     }
   }
 
+  /**
+   * Writes the low `a.size` bytes of the integer `value` (exact, |value| < 2^53)
+   * to a register or memory. Bytes above the fourth come from the high half, so
+   * 8-byte cells get the sign extension of small negative values.
+   */
+  private putIntegerNum(value: number, a: Address): void {
+    if (a.type & Op.REG) {
+      this.registers.setNum(a, value);
+    } else if (a.type & Op.MEM) {
+      const address = a.address;
+      const size = a.size;
+      if (address < this.offset || address + size > this.memoryEnd) {
+        this.outOfRange = true;
+        return;
+      }
+      if (size <= 4) {
+        this.memory.setLittleEndian(address, value, size);
+      } else {
+        this.memory.setLittleEndian(address, value, 4);
+        this.memory.setLittleEndian(address + 4, Math.floor(value / TWO_32), size - 4);
+      }
+    }
+  }
+
   /** Stores a value in a register, memory or FPU register (`DataSpace.put`). */
   put(value: bigint, a: Address | null | undefined, info: MemCellInfo | null): void {
     if (!a) return;
     if (a.type & (Op.MEM | Op.REG)) {
       this.putInteger(value, a);
-      if (info === null) this.memInfoDelete(a);
-      else this.memInfoPut(a, info);
+      this.setMemInfo(a, info);
       return;
     }
     if (a.type & Op.FPUREG) this.fpu.putBits(a, value);
+  }
+
+  /** `put` of an exact integer number (|value| < 2^53), e.g. a 32-bit result. */
+  putNum(value: number, a: Address | null | undefined, info: MemCellInfo | null): void {
+    if (!a) return;
+    if (a.type & (Op.MEM | Op.REG)) {
+      this.putIntegerNum(value, a);
+      this.setMemInfo(a, info);
+      return;
+    }
+    if (a.type & Op.FPUREG) this.fpu.putBits(a, BigInt(value));
+  }
+
+  private setMemInfo(a: Address, info: MemCellInfo | null): void {
+    if (info !== null) this.memInfoPut(a, info);
+    else if (a.type & Op.REG ? this.regInfo.size !== 0 : this.memInfo.size !== 0) {
+      this.memInfoDelete(a);
+    }
   }
 
   // ---- reads ----
@@ -320,6 +369,76 @@ export class DataSpace {
     }
     if (a.type & Op.FPUREG) return this.fpu.getBits(a);
     return a.value;
+  }
+
+  /**
+   * `getUpdate` as a number, for operands of at most 4 bytes and static values
+   * that are small numbers (`Address.num`). Not for 8-byte memory or FPU registers.
+   */
+  getUpdateNum(a: Address | null | undefined, signed: boolean): number {
+    if (!a) return 0;
+    if (a.type & Op.MEM) {
+      const address = a.address;
+      const size = a.size;
+      if (address < this.offset || address + size > this.memoryEnd) {
+        this.outOfRange = true;
+        return 0;
+      }
+      if (this.memInfo.size !== 0) {
+        const info = this.memInfo.get(address);
+        if (info && info.type === Op.LABEL) {
+          const current = this.labels.getLabelLine(info.value);
+          if (current !== this.getUnsignedMemoryNum(address, size)) this.putNum(current, a, info);
+          return current;
+        }
+      }
+      return signed
+        ? this.getSignedMemoryNum(address, size)
+        : this.getUnsignedMemoryNum(address, size);
+    }
+    if (a.type & Op.REG) {
+      if (this.regInfo.size !== 0) {
+        const info = this.regInfo.get(a.address);
+        if (info && info.type === Op.LABEL) {
+          const current = this.labels.getLabelLine(info.value);
+          if (current !== this.registers.get(a)) this.putNum(current, a, info);
+          return current;
+        }
+      }
+      return signed ? this.getSignedRegisterNum(a) : this.registers.get(a);
+    }
+    return a.num;
+  }
+
+  /** Unsigned little-endian value of 1, 2 or 4 bytes. */
+  private getUnsignedMemoryNum(address: number, size: number): number {
+    const bytes = this.memory.bytes;
+    const i = address - this.offset;
+    if (size === 4) {
+      return (bytes[i] | (bytes[i + 1] << 8) | (bytes[i + 2] << 16) | (bytes[i + 3] << 24)) >>> 0;
+    }
+    if (size === 2) return bytes[i] | (bytes[i + 1] << 8);
+    if (size === 1) return bytes[i];
+    let result = 0;
+    for (let k = size - 1; k >= 0; k--) result = result * 256 + bytes[i + k];
+    return result;
+  }
+
+  private getSignedMemoryNum(address: number, size: number): number {
+    const unsigned = this.getUnsignedMemoryNum(address, size);
+    if (size === 4) return unsigned | 0;
+    if (size === 2) return (unsigned << 16) >> 16;
+    if (size === 1) return (unsigned << 24) >> 24;
+    throw new Error('getSignedMemory called with invalid size!');
+  }
+
+  /** Signed value of a register of the given part's size. */
+  getSignedRegisterNum(a: Address): number {
+    const value = this.registers.get(a);
+    if (a.size === 4) return value | 0;
+    if (a.size === 2) return (value << 16) >> 16;
+    if (a.size === 1) return (value << 24) >> 24;
+    throw new Error('getSignedRegister called with invalid size');
   }
 
   /** Unsigned value of a register (`Address.getShortcut`). */

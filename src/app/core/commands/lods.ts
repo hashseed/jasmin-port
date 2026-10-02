@@ -1,6 +1,5 @@
 import { Address } from '../address';
 import { Command, Flag } from '../command';
-import { long } from '../java';
 import { Op } from '../op';
 import { Parameters } from '../parameters';
 
@@ -44,8 +43,7 @@ export class Lods extends Command {
 
   private step(register: Address, amount: number): void {
     const d = this.dsp;
-    const delta = BigInt(d.fDirection ? -amount : amount);
-    d.put(d.shortcut(register) + delta, register, null);
+    d.putNum(d.registers.get(register) + (d.fDirection ? -amount : amount), register, null);
   }
 
   private memAt(register: Address, size: number): Address {
@@ -60,34 +58,41 @@ export class Lods extends Command {
       else if (p.mnemo.endsWith('D')) p.size = 4;
     }
     const accumulator = d.getMatchingRegister(d.EAX, p.size)!;
+    // All operands have at most 4 bytes, so the values are numbers.
     let dest: Address;
-    let src: bigint;
+    let src: number;
     if (p.mnemo.startsWith('SCAS') || p.mnemo.startsWith('CMPS')) {
       const scas = p.mnemo.startsWith('SCAS');
-      p.a = scas ? p.getAddress(accumulator) : p.getAddress(this.memAt(d.ESI, p.size));
-      const subtrahend = p.getAddress(this.memAt(d.EDI, p.size));
-      p.b = long(-subtrahend);
-      p.result = long(p.a + p.b);
-      this.setFlags(p, Flag.OF | Flag.SF | Flag.ZF | Flag.AF | Flag.PF | Flag.CF, subtrahend);
+      const a = scas ? p.getAddressNum(accumulator) : p.getAddressNum(this.memAt(d.ESI, p.size));
+      const subtrahend = p.getAddressNum(this.memAt(d.EDI, p.size));
+      // a + (-subtrahend), with the subtrahend for AF (07 Q-F-1).
+      this.setFlagsNum(
+        p.size,
+        Flag.OF | Flag.SF | Flag.ZF | Flag.AF | Flag.PF | Flag.CF,
+        a,
+        -subtrahend,
+        a - subtrahend,
+        subtrahend,
+      );
       if (!scas) this.step(d.ESI, p.size);
       this.step(d.EDI, p.size);
       return;
     }
     if (p.mnemo.startsWith('LODS')) {
       dest = accumulator;
-      src = p.getAddress(this.memAt(d.ESI, p.size));
+      src = p.getAddressNum(this.memAt(d.ESI, p.size));
       this.step(d.ESI, p.size);
     } else if (p.mnemo.startsWith('STOS')) {
       dest = this.memAt(d.EDI, p.size);
-      src = p.getAddress(accumulator);
+      src = p.getAddressNum(accumulator);
       this.step(d.EDI, p.size);
     } else {
       dest = this.memAt(d.EDI, p.size);
-      src = p.getAddress(this.memAt(d.ESI, p.size));
+      src = p.getAddressNum(this.memAt(d.ESI, p.size));
       this.step(d.EDI, p.size);
       this.step(d.ESI, p.size);
     }
-    p.putAddress(dest, src, null);
+    p.putAddressNum(dest, src, null);
   }
 
   private repeatCondition(prefix: string): boolean {
@@ -98,11 +103,11 @@ export class Lods extends Command {
     const d = this.dsp;
     if (p.type(0) === Op.PREFIX) {
       p.size = p.sizeOf(1);
-      if (d.shortcut(d.ECX) !== 0n) {
+      if (d.registers.get(d.ECX) !== 0) {
         do {
           this.executeOnce(p);
-          d.put(d.shortcut(d.ECX) - 1n, d.ECX, null);
-        } while (d.shortcut(d.ECX) !== 0n && this.repeatCondition(p.arg(0)));
+          d.putNum(d.registers.get(d.ECX) - 1, d.ECX, null);
+        } while (d.registers.get(d.ECX) !== 0 && this.repeatCondition(p.arg(0)));
       }
     } else {
       p.size = p.sizeOf(0);

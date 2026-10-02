@@ -12,6 +12,6 @@ export class Lea extends Command {
 
   execute(p: Parameters): void {
     const address = p.argument(1).cAddress?.calculateEffectiveAddress(true) ?? 0;
-    p.put(0, BigInt(address), null);
+    p.putNum(0, address, null);
   }
 }

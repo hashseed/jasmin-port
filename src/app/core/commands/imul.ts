@@ -1,6 +1,6 @@
 import { Command } from '../command';
-import { long, shr } from '../java';
-import { Op } from '../op';
+import { long, mulHighS32, shr } from '../java';
+import { Op, matches } from '../op';
 import { Parameters } from '../parameters';
 
 /**
@@ -36,6 +36,10 @@ export class Imul extends Command {
   }
 
   execute(p: Parameters): void {
+    if (p.numeric) {
+      this.executeNum(p);
+      return;
+    }
     if (p.validate(2, Op.NULL) === null) {
       if (p.validate(1, Op.NULL) === null) {
         this.ex1(p);
@@ -53,6 +57,65 @@ export class Imul extends Command {
     p.put(0, BigInt.asUintN(bits, p.b), null);
     p.result = BigInt.asUintN(bits, shr(p.b, bits));
     this.setCarryOverflow(p.b, bits);
+  }
+
+  /**
+   * `execute` on numbers. Math.imul gives the low 32 bits of any product. Below
+   * 2^62 in magnitude the Java long product does not wrap, and its rounded double
+   * is out of the destination's signed range exactly when the product is, since
+   * rounding is monotonic and the bounds are powers of two. Larger products (only
+   * with large immediates) are computed as bigints.
+   */
+  private executeNum(p: Parameters): void {
+    let a: number;
+    let b: number;
+    if (matches(p.type(2), Op.NULL)) {
+      if (matches(p.type(1), Op.NULL)) {
+        this.ex1Num(p);
+        return;
+      }
+      a = p.getNum(0);
+      b = p.getNum(1);
+    } else {
+      a = p.getNum(1);
+      b = p.getNum(2);
+    }
+    if (p.size !== 1 && p.size !== 2 && p.size !== 4) return;
+    const bits = p.size * 8;
+    const approx = b * a;
+    if (Math.abs(approx) >= 2 ** 62) {
+      const product = long(BigInt(b) * BigInt(a));
+      p.put(0, BigInt.asUintN(bits, product), null);
+      this.setCarryOverflow(product, bits);
+      return;
+    }
+    p.putNum(0, Math.imul(b, a), null);
+    const limit = 2 ** (bits - 1);
+    this.dsp.fOverflow = this.dsp.fCarry = approx < -limit || approx >= limit;
+  }
+
+  /** `ex1` on numbers: the operands are signed values of at most 32 bits. */
+  private ex1Num(p: Parameters): void {
+    const d = this.dsp;
+    const a = p.getNum(0);
+    if (p.size === 1) {
+      const ax = p.getAddressNum(d.AL) * a;
+      p.putAddressNum(d.AX, ax, null);
+      d.fOverflow = d.fCarry = ax < -0x80 || ax >= 0x80;
+    } else if (p.size === 2) {
+      const dxax = p.getAddressNum(d.AX) * a;
+      p.putAddressNum(d.AX, dxax & 0xffff, null);
+      p.putAddressNum(d.DX, (dxax >> 16) & 0xffff, null);
+      d.fOverflow = d.fCarry = dxax < -0x8000 || dxax >= 0x8000;
+    } else if (p.size === 4) {
+      const eax = p.getAddressNum(d.EAX);
+      const low = Math.imul(eax, a);
+      const high = mulHighS32(eax, a);
+      p.putAddressNum(d.EAX, low >>> 0, null);
+      p.putAddressNum(d.EDX, high >>> 0, null);
+      // The product fits in 32 bits iff the high half is the sign extension of the low.
+      d.fOverflow = d.fCarry = high !== low >> 31;
+    }
   }
 
   private ex1(p: Parameters): void {

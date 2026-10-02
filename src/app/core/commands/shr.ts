@@ -23,6 +23,10 @@ export class Shr extends Command {
   }
 
   execute(p: Parameters): void {
+    if (p.numeric) {
+      this.executeNum(p);
+      return;
+    }
     const d = this.dsp;
     p.a = p.get(0);
     p.b = p.get(1) & 31n;
@@ -47,6 +51,44 @@ export class Shr extends Command {
       this.setFlags(p, Flag.SF | Flag.ZF | Flag.PF);
       // Last bit shifted out: beyond the operand that is 0 for SHR, the sign for SAR.
       d.fCarry = this.getBit(p.a, p.b - 1n);
+    }
+  }
+
+  /**
+   * `execute` on numbers. The operand has at most 32 bits; the shifted value only
+   * matters up to bit 32 (CF of SHL), so 32-bit shifts plus that bit suffice.
+   */
+  private executeNum(p: Parameters): void {
+    const d = this.dsp;
+    let a = p.getNum(0);
+    // The count is the low 5 bits (also of a sign-extended CL).
+    const count = p.getNum(1) & 31;
+    if (count === 0) return;
+    const bits = p.sizeOf(0) * 8;
+    if (p.mnemo.endsWith('L')) {
+      // a < 2^32, so the long result a * 2^count does not wrap. `low` holds its low
+      // 32 bits; CF is its bit p.size * 8, for 32 bits bit 32 - count of a.
+      const low = a << count;
+      p.putNum(0, low, null);
+      this.setFlagsNum(p.size, Flag.SF | Flag.ZF | Flag.PF, a, count, low, count);
+      const flagBits = p.size * 8;
+      d.fCarry = flagBits === 32 ? ((a >>> (32 - count)) & 1) === 1 : ((low >> flagBits) & 1) === 1;
+      if (count === 1) d.fOverflow = d.fCarry !== (((low >> (bits - 1)) & 1) === 1);
+    } else {
+      if (p.mnemo === 'SHR') {
+        if (count === 1) d.fOverflow = ((a >>> (bits - 1)) & 1) === 1;
+      } else {
+        // SAR reads the operand sign-extended.
+        p.signed = true;
+        a = p.getNum(0);
+        if (count === 1) d.fOverflow = false;
+      }
+      // SHR: a is unsigned (below 2^32); SAR: a is a signed 32-bit value.
+      const result = p.mnemo === 'SHR' ? a >>> count : a >> count;
+      p.putNum(0, result, null);
+      this.setFlagsNum(p.size, Flag.SF | Flag.ZF | Flag.PF, a, count, result, count);
+      // Last bit shifted out: beyond the operand that is 0 for SHR, the sign for SAR.
+      d.fCarry = ((a >> (count - 1)) & 1) === 1;
     }
   }
 }

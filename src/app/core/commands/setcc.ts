@@ -48,6 +48,6 @@ export class Setcc extends Command {
   }
 
   execute(p: Parameters): void {
-    p.put(0, this.testCC(p.mnemo.substring(3)) ? 1n : 0n, null);
+    p.putNum(0, this.testCondition(this.conditionOf(p, 3)) ? 1 : 0, null);
   }
 }

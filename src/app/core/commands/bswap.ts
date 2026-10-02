@@ -11,12 +11,13 @@ export class Bswap extends Command {
   }
 
   execute(p: Parameters): void {
-    const source = p.get(0);
+    // A 32-bit register: numbers suffice.
+    const source = p.getNum(0);
     const dest =
-      ((source & 0xffn) << 24n) |
-      ((source & 0xff00n) << 8n) |
-      ((source & 0xff0000n) >> 8n) |
-      ((source & 0xff000000n) >> 24n);
-    p.put(0, dest, null);
+      ((source & 0xff) << 24) |
+      ((source & 0xff00) << 8) |
+      ((source >>> 8) & 0xff00) |
+      (source >>> 24);
+    p.putNum(0, dest, null);
   }
 }

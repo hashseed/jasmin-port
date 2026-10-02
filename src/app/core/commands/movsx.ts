@@ -15,6 +15,7 @@ export class Movsx extends Command {
   }
 
   execute(p: Parameters): void {
-    p.put(0, p.get(1), null);
+    if (p.numeric) p.putNum(0, p.getNum(1), null);
+    else p.put(0, p.get(1), null);
   }
 }

@@ -26,7 +26,31 @@ export class Memory {
     const index = address - this.offset;
     this.bytes[index] = value;
     this.dirty[index] = this.stamp;
-    for (const listener of this.listeners) listener(address, value & 0xff);
+    if (this.listeners.size !== 0) {
+      for (const listener of this.listeners) listener(address, value & 0xff);
+    }
+  }
+
+  /**
+   * Writes the low `size` bytes (at most 4) of `value` little-endian, as `size`
+   * calls of `set` would.
+   */
+  setLittleEndian(address: number, value: number, size: number): void {
+    let v = value;
+    if (this.listeners.size !== 0) {
+      // Listeners may read memory: notify after each byte, like `set`.
+      for (let i = 0; i < size; i++) {
+        this.set(address + i, v & 0xff);
+        v >>>= 8;
+      }
+      return;
+    }
+    const index = address - this.offset;
+    for (let i = 0; i < size; i++) {
+      this.bytes[index + i] = v;
+      this.dirty[index + i] = this.stamp;
+      v >>>= 8;
+    }
   }
 
   reset(): void {

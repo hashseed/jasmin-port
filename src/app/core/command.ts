@@ -1,5 +1,5 @@
 import { DataSpace } from './data-space';
-import { long, shl, shr, sizeMask } from './java';
+import { long, shl, shr, sizeMask, TWO_32 } from './java';
 import { Parameters } from './parameters';
 import { ParseError } from './parse-error';
 
@@ -61,30 +61,56 @@ export abstract class Command {
    * real operands (07 Q-F-1).
    */
   protected setFlags(p: Parameters, flags: number, subtrahend?: bigint): void {
-    const bits = p.size * 8;
-    const d = this.dsp;
-    if (bits > 32) {
+    if (p.size > 4) {
       this.setFlagsLong(p, flags, subtrahend);
       return;
     }
-    // Operands of at most 32 bits: only bits 0..bits of the 64-bit values matter, so
-    // convert them to numbers once (exact up to 2^53) instead of shifting bigints.
-    const r = Number(BigInt.asUintN(bits + 1, p.result));
-    const signBit = 2 ** (bits - 1);
-    if (flags & Flag.ZF) d.fZero = r % (signBit * 2) === 0;
-    if (flags & Flag.SF) d.fSign = Math.floor(r / signBit) % 2 === 1;
-    if (flags & Flag.PF) d.fParity = EVEN_PARITY[r & 0xff] === 1;
-    if (flags & Flag.CF) d.fCarry = r >= signBit * 2;
+    // Operands of at most 32 bits: only bits 0..32 of the 64-bit values matter.
+    const low = (value: bigint) => Number(BigInt.asUintN(33, value));
+    const b = low(p.b);
+    this.setFlagsNum(
+      p.size,
+      flags,
+      low(p.a),
+      b,
+      low(p.result),
+      subtrahend === undefined ? b : low(subtrahend),
+    );
+  }
+
+  /**
+   * `setFlags` on numbers, for operations of `size` <= 4 bytes. `a`, `b` and `result`
+   * are the Java long values as exact integers (any sign, |value| < 2^53), or any
+   * integers with the same bits 0..32: the flags depend on nothing else. Bitwise
+   * operators see the low 32 bits of their operands, two's complement.
+   */
+  protected setFlagsNum(
+    size: number,
+    flags: number,
+    a: number,
+    b: number,
+    result: number,
+    subtrahend: number,
+  ): void {
+    const d = this.dsp;
+    const bits = size * 8;
+    const signShift = bits - 1;
+    if (flags & Flag.ZF) d.fZero = (bits === 32 ? result | 0 : result & ((1 << bits) - 1)) === 0;
+    if (flags & Flag.SF) d.fSign = ((result >> signShift) & 1) === 1;
+    if (flags & Flag.PF) d.fParity = EVEN_PARITY[result & 0xff] === 1;
+    if (flags & Flag.CF) {
+      // Bit `bits` of the result: carry (or borrow) out of the operand.
+      d.fCarry = (bits === 32 ? Math.floor(result / TWO_32) & 1 : (result >> bits) & 1) === 1;
+    }
     if (flags & Flag.OF) {
-      const aSign = Number(BigInt.asUintN(bits, p.a)) >= signBit;
-      const bSign = Number(BigInt.asUintN(bits, p.b)) >= signBit;
-      const resultSign = Math.floor(r / signBit) % 2 === 1;
+      const aSign = (a >> signShift) & 1;
+      const bSign = (b >> signShift) & 1;
+      const resultSign = (result >> signShift) & 1;
       d.fOverflow = aSign === bSign && resultSign !== aSign;
     }
     if (flags & Flag.AF) {
       // Carry or borrow out of bit 3 (07 Q-F-1): bit 4 of a ^ b ^ result.
-      const b = Number(BigInt.asUintN(5, subtrahend ?? p.b));
-      d.fAuxiliary = ((Number(BigInt.asUintN(5, p.a)) ^ b ^ (r & 0x1f)) & 0x10) !== 0;
+      d.fAuxiliary = ((a ^ subtrahend ^ result) & 0x10) !== 0;
     }
   }
 
@@ -110,62 +136,128 @@ export abstract class Command {
 
   /** Condition-code test for Jcc, CMOVcc, SETcc, LOOPcc. */
   protected testCC(cc: string): boolean {
+    return this.testCondition(conditionCode(cc));
+  }
+
+  /**
+   * The condition of a mnemonic such as `JNE` (prefix length 1), decoded once per
+   * line and kept in `p.condition`.
+   */
+  protected conditionOf(p: Parameters, prefixLength: number): number {
+    if (p.condition < 0) p.condition = conditionCode(p.mnemo.substring(prefixLength));
+    return p.condition;
+  }
+
+  /** Tests a condition from `conditionCode`. */
+  protected testCondition(condition: number): boolean {
     const d = this.dsp;
-    switch (cc) {
-      case 'O':
+    switch (condition) {
+      case Condition.O:
         return d.fOverflow;
-      case 'NO':
+      case Condition.NO:
         return !d.fOverflow;
-      case 'C':
-      case 'B':
-      case 'NAE':
+      case Condition.C:
         return d.fCarry;
-      case 'NC':
-      case 'NB':
-      case 'AE':
+      case Condition.NC:
         return !d.fCarry;
-      case 'E':
-      case 'Z':
+      case Condition.Z:
         return d.fZero;
-      case 'NE':
-      case 'NZ':
+      case Condition.NZ:
         return !d.fZero;
-      case 'BE':
-      case 'NA':
+      case Condition.BE:
         return d.fCarry || d.fZero;
-      case 'NBE':
-      case 'A':
+      case Condition.A:
         return !(d.fCarry || d.fZero);
-      case 'S':
+      case Condition.S:
         return d.fSign;
-      case 'NS':
+      case Condition.NS:
         return !d.fSign;
-      case 'P':
-      case 'PE':
+      case Condition.P:
         return d.fParity;
-      case 'NP':
-      case 'PO':
+      case Condition.NP:
         return !d.fParity;
-      case 'L':
-      case 'NGE':
+      case Condition.L:
         return d.fSign !== d.fOverflow;
-      case 'NL':
-      case 'GE':
+      case Condition.GE:
         return d.fSign === d.fOverflow;
-      case 'LE':
-      case 'NG':
+      case Condition.LE:
         return d.fSign !== d.fOverflow || d.fZero;
-      case 'NLE':
-      case 'G':
+      case Condition.G:
         return !(d.fSign !== d.fOverflow || d.fZero);
-      case 'CXZ':
-        return d.shortcut(d.CX) === 0n;
-      case 'ECXZ':
-        return d.shortcut(d.ECX) === 0n;
+      case Condition.CXZ:
+        return d.registers.get(d.CX) === 0;
+      case Condition.ECXZ:
+        return d.registers.get(d.ECX) === 0;
+      case Condition.ALWAYS:
+        return true;
       default:
         return false;
     }
   }
+}
+
+/** Condition codes of `testCondition`; synonyms (B, NAE = C; E = Z; ...) share one. */
+export const Condition = {
+  O: 0,
+  NO: 1,
+  C: 2,
+  NC: 3,
+  Z: 4,
+  NZ: 5,
+  BE: 6,
+  A: 7,
+  S: 8,
+  NS: 9,
+  P: 10,
+  NP: 11,
+  L: 12,
+  GE: 13,
+  LE: 14,
+  G: 15,
+  CXZ: 16,
+  ECXZ: 17,
+  ALWAYS: 18,
+  NEVER: 19,
+} as const;
+
+const CONDITION_CODES = new Map<string, number>([
+  ['O', Condition.O],
+  ['NO', Condition.NO],
+  ['C', Condition.C],
+  ['B', Condition.C],
+  ['NAE', Condition.C],
+  ['NC', Condition.NC],
+  ['NB', Condition.NC],
+  ['AE', Condition.NC],
+  ['E', Condition.Z],
+  ['Z', Condition.Z],
+  ['NE', Condition.NZ],
+  ['NZ', Condition.NZ],
+  ['BE', Condition.BE],
+  ['NA', Condition.BE],
+  ['NBE', Condition.A],
+  ['A', Condition.A],
+  ['S', Condition.S],
+  ['NS', Condition.NS],
+  ['P', Condition.P],
+  ['PE', Condition.P],
+  ['NP', Condition.NP],
+  ['PO', Condition.NP],
+  ['L', Condition.L],
+  ['NGE', Condition.L],
+  ['NL', Condition.GE],
+  ['GE', Condition.GE],
+  ['LE', Condition.LE],
+  ['NG', Condition.LE],
+  ['NLE', Condition.G],
+  ['G', Condition.G],
+  ['CXZ', Condition.CXZ],
+  ['ECXZ', Condition.ECXZ],
+]);
+
+/** The condition code of a condition suffix (`NE`, `GE`, ...); unknown ones never hold. */
+export function conditionCode(cc: string): number {
+  return CONDITION_CODES.get(cc) ?? Condition.NEVER;
 }
 
 /** Data directives (`DB`, `RESB`, ...): their label becomes a variable. */

@@ -1,4 +1,4 @@
-import { Command } from '../command';
+import { Command, Condition, conditionCode } from '../command';
 import { int } from '../java';
 import { Op } from '../op';
 import { Parameters } from '../parameters';
@@ -45,12 +45,12 @@ export class Jmp extends Command {
     return p.validate(0, Op.LABEL | Op.MEM | Op.REG | Op.IMM | Op.CONST) ?? p.validate(1, Op.NULL);
   }
 
-  private testCondition(mnemo: string): boolean {
-    return mnemo === 'JMP' || this.testCC(mnemo.substring(1));
-  }
-
   execute(p: Parameters): void {
-    p.a = p.get(0);
-    if (this.testCondition(p.mnemo)) this.dsp.setInstructionPointer(Number(int(p.a)));
+    // The target as Java `(int)`: its low 32 bits, signed.
+    const target = p.numeric ? p.getNum(0) | 0 : Number(int(p.get(0)));
+    if (p.condition < 0) {
+      p.condition = p.mnemo === 'JMP' ? Condition.ALWAYS : conditionCode(p.mnemo.substring(1));
+    }
+    if (this.testCondition(p.condition)) this.dsp.setInstructionPointer(target);
   }
 }

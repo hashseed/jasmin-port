@@ -35,6 +35,10 @@ export class Parameters {
   fa = 0;
   fb = 0;
   label: string | null = null;
+  /** The command's decoded condition code (`Command.conditionOf`), -1 until decoded. */
+  condition = -1;
+  /** Cached `numeric`: -1 unknown, 0 no, 1 yes. Reset when operands change. */
+  private numericState = -1;
 
   constructor(readonly dsp: DataSpace) {}
 
@@ -55,6 +59,8 @@ export class Parameters {
     this.args = [...args];
     this.defaultSize = defaultSize;
     this.signed = signed;
+    this.numericState = -1;
+    this.condition = -1;
     this.size = Math.max(this.sizeOf(0), this.sizeOf(1));
     if (this.size === -1) this.size = defaultSize;
     for (const arg of args) {
@@ -74,6 +80,31 @@ export class Parameters {
 
   // ---- reading and writing operands ----
 
+  /**
+   * Whether the instruction can run on numbers (`getNum`/`putNum`): the operation
+   * size and every operand are at most 4 bytes, no operand is an FPU register, and
+   * every static value is a small number (`Address.num`). Otherwise the operands
+   * are read as bigints, as Java longs. Cached until the operands change.
+   */
+  get numeric(): boolean {
+    if (this.numericState < 0) this.numericState = this.computeNumeric() ? 1 : 0;
+    return this.numericState === 1;
+  }
+
+  private computeNumeric(): boolean {
+    if (this.size > 4) return false;
+    for (let i = 0; i < this.numArguments; i++) {
+      const a = this.argument(i).address;
+      if (a.type & Op.FPUREG) return false;
+      if (a.dynamic) {
+        if (a.size > 4) return false;
+      } else if (Number.isNaN(a.num)) {
+        return false;
+      }
+    }
+    return true;
+  }
+
   getAddress(a: Address): bigint {
     if (a.dynamic) {
       if (a.type & Op.REG) {
@@ -85,9 +116,45 @@ export class Parameters {
         }
         return value;
       }
-      a.value = this.dsp.getUpdate(a, this.signed);
+      // (The original cached the value in `a.value`; nothing reads it for dynamic operands.)
+      return this.dsp.getUpdate(a, this.signed);
     }
     return a.value;
+  }
+
+  /** `getAddress` as a number: for registers, memory of up to 4 bytes and small static values. */
+  getAddressNum(a: Address): number {
+    if (a.dynamic) {
+      if (a.type & Op.REG) {
+        return this.signed ? this.dsp.getSignedRegisterNum(a) : this.dsp.registers.get(a);
+      }
+      return this.dsp.getUpdateNum(a, this.signed);
+    }
+    return a.num;
+  }
+
+  /** `get` as a number; only when `numeric` holds (or the operand is known to fit). */
+  getNum(index: number): number {
+    const arg = this.args[index];
+    if (!arg || index >= this.numArguments) return 0;
+    const a = arg.address;
+    if (a.type & Op.REG) {
+      return this.signed ? this.dsp.getSignedRegisterNum(a) : this.dsp.registers.get(a);
+    }
+    if (arg.cAddress) a.address = arg.cAddress.calculateEffectiveAddress(true);
+    return this.getAddressNum(a);
+  }
+
+  /** `putAddress` of an exact integer number. */
+  putAddressNum(a: Address, value: number, info: MemCellInfo | null): void {
+    if (a.dynamic) this.dsp.putNum(value, a, info);
+  }
+
+  /** `put` of an exact integer number. */
+  putNum(index: number, value: number, info: MemCellInfo | null): void {
+    const arg = this.argument(index);
+    if (arg.cAddress) arg.address.address = arg.cAddress.calculateEffectiveAddress(true);
+    if (arg.address.dynamic) this.dsp.putNum(value, arg.address, info);
   }
 
   get(index: number): bigint {
@@ -143,10 +210,23 @@ export class Parameters {
 
   // ---- stack ----
 
+  /** Whether a pushed or popped operand can go through numbers (at most 4 bytes, no FPU). */
+  private static numericStackOperand(a: Address): boolean {
+    return a.size <= 4 && (a.dynamic ? !(a.type & Op.FPUREG) : !Number.isNaN(a.num));
+  }
+
   push(a: Address): void {
+    const d = this.dsp;
+    if (Parameters.numericStackOperand(a)) {
+      const value = this.getAddressNum(a);
+      // ESP - size as a Java long; a negative result keeps its low 32 bits.
+      d.putNum(d.esp - a.size, d.ESP, null);
+      d.putNum(value, d.stack(a.size), d.memInfoOf(a));
+      return;
+    }
     const value = this.getAddress(a);
-    this.dsp.put(this.dsp.shortcut(this.dsp.ESP) - BigInt(a.size), this.dsp.ESP, null);
-    this.dsp.put(value, this.dsp.stack(a.size), this.dsp.memInfoOf(a));
+    d.put(d.shortcut(d.ESP) - BigInt(a.size), d.ESP, null);
+    d.put(value, d.stack(a.size), d.memInfoOf(a));
   }
 
   /**
@@ -154,26 +234,33 @@ export class Parameters {
    * underflow, raised before anything is written (07 Q-S-1).
    */
   pop(a: Address): void {
-    const newESP = this.dsp.shortcut(this.dsp.ESP) + BigInt(a.size);
-    if (newESP > BigInt(this.dsp.memoryEnd)) {
-      this.dsp.setAddressOutOfRange();
+    const d = this.dsp;
+    // ESP + size is below 2^33, exact as a number.
+    const newESP = d.esp + a.size;
+    if (newESP > d.memoryEnd) {
+      d.setAddressOutOfRange();
       return;
     }
-    const stack = this.dsp.stack(a.size);
-    this.dsp.put(this.dsp.getUpdate(stack, false), a, this.dsp.memInfoOf(stack));
-    this.dsp.put(newESP, this.dsp.ESP, null);
+    const stack = d.stack(a.size);
+    if (Parameters.numericStackOperand(a)) {
+      d.putNum(d.getUpdateNum(stack, false), a, d.memInfoOf(stack));
+    } else {
+      d.put(d.getUpdate(stack, false), a, d.memInfoOf(stack));
+    }
+    d.putNum(newESP, d.ESP, null);
   }
 
   /** Pops `size` bytes and returns them; a stack underflow (07 Q-S-1) returns 0 and changes nothing. */
   popValue(size: number): bigint {
-    const newESP = this.dsp.shortcut(this.dsp.ESP) + BigInt(size);
-    if (newESP > BigInt(this.dsp.memoryEnd)) {
-      this.dsp.setAddressOutOfRange();
+    const d = this.dsp;
+    const newESP = d.esp + size;
+    if (newESP > d.memoryEnd) {
+      d.setAddressOutOfRange();
       return 0n;
     }
-    const stack = this.dsp.stack(size);
-    this.dsp.put(newESP, this.dsp.ESP, null);
-    return this.dsp.getUpdate(stack, false);
+    const stack = d.stack(size);
+    d.putNum(newESP, d.ESP, null);
+    return d.getUpdate(stack, false);
   }
 
   // ---- operand accessors ----
@@ -290,6 +377,7 @@ export class Parameters {
       if (size < minSize) {
         if (matches(this.type(i), Op.IMM | Op.MU) && !arg.sizeExplicit) {
           arg.address.size = minSize;
+          this.numericState = -1;
           // Sign-extend immediates if necessary.
           arg.address.value = this.dsp.getInitial(arg.arg, arg.address.type, minSize, this.signed);
         } else {
@@ -307,6 +395,7 @@ export class Parameters {
       }
       this.size = Math.max(this.size, this.sizeOf(i), size);
     }
+    this.numericState = -1;
     return null;
   }
 
