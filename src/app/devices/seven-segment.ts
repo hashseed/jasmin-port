@@ -1,3 +1,4 @@
+import { MemoryRange } from '../core';
 import { ColorChoice } from './color';
 import { Point, Polygon, Rect, idiv, polygonContains, roundFloat } from './geometry';
 
@@ -17,15 +18,43 @@ const DIGIT_HEIGHT = HALF_THICKNESS + GAP + LENGTH + GAP + GAP + LENGTH + GAP + 
 
 /** Configuration of one document's 7-Segment display (spec 06 §1). */
 export class SevenSegmentDevice {
-  digits = 4;
+  /** Called when the watched bytes move or resize (set by the DeviceSet). */
+  onRangeChange: () => void = () => undefined;
+  private addressValue: number;
+  private digitCount = 4;
 
   constructor(
-    public address: number,
+    address: number,
     public color: ColorChoice,
-  ) {}
+  ) {
+    this.addressValue = address;
+  }
+
+  get address(): number {
+    return this.addressValue;
+  }
+
+  set address(address: number) {
+    this.addressValue = address;
+    this.onRangeChange();
+  }
+
+  get digits(): number {
+    return this.digitCount;
+  }
+
+  set digits(digits: number) {
+    this.digitCount = digits;
+    this.onRangeChange();
+  }
 
   get byteCount(): number {
     return this.digits;
+  }
+
+  /** The bytes the display shows. */
+  get range(): MemoryRange {
+    return { start: this.address, end: this.address + this.byteCount };
   }
 
   watches(address: number): boolean {

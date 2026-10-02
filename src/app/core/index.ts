@@ -6,6 +6,7 @@ export * from './interpreter';
 export * from './java-double';
 export * from './line-map';
 export * from './machine-state';
+export * from './memory';
 export * from './op';
 export * from './parse-error';
 export * from './parser';

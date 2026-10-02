@@ -1,3 +1,4 @@
+import { MemoryRange } from '../core';
 import { ByteReader } from './memory-range';
 
 export type ConsoleMode = 'array' | 'pipe';
@@ -28,13 +29,57 @@ const latin1 = (byte: number): string => String.fromCharCode(byte & 0xff);
  *   them immediately gives the same text.
  */
 export class ConsoleDevice {
-  mode: ConsoleMode = 'array';
-  private content = '';
+  /** Called when the watched bytes move or resize (set by the DeviceSet). */
+  onRangeChange: () => void = () => undefined;
+  private addressValue: number;
+  private modeValue: ConsoleMode = 'array';
+  private contentValue = '';
 
-  constructor(public address: number) {}
+  constructor(address: number) {
+    this.addressValue = address;
+  }
+
+  get address(): number {
+    return this.addressValue;
+  }
+
+  /** Moves the console without re-reading (see `setAddress`). */
+  set address(address: number) {
+    this.addressValue = address;
+    this.onRangeChange();
+  }
+
+  get mode(): ConsoleMode {
+    return this.modeValue;
+  }
+
+  /** Changes the mode without clearing or re-reading (see `setMode`). */
+  set mode(mode: ConsoleMode) {
+    this.modeValue = mode;
+    this.onRangeChange();
+  }
 
   get text(): string {
     return this.content;
+  }
+
+  /**
+   * The bytes whose writes can change the text: in array mode the string and its
+   * terminator, in pipe mode the address.
+   */
+  get range(): MemoryRange {
+    const end = this.address + (this.mode === 'array' ? this.content.length + 1 : 1);
+    return { start: this.address, end };
+  }
+
+  private get content(): string {
+    return this.contentValue;
+  }
+
+  private set content(content: string) {
+    const resized = content.length !== this.contentValue.length;
+    this.contentValue = content;
+    if (resized && this.mode === 'array') this.onRangeChange();
   }
 
   /** Clears the text (Reset; the `Clear` menu item in pipe mode). */

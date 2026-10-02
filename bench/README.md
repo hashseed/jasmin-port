@@ -50,3 +50,45 @@ beyond 2^62, DIV dividends beyond 2^53, rotates and double shifts). Same contain
 
 The port now runs about 15 million instructions per second (1,000 entries: 2,120 ms
 on the original main, 1,328 ms with number flags, 327 ms now).
+
+## In the browser
+
+`npm run bench:browser -- [--no-build] [N ...]` (`node bench/browser-bench.mjs`) runs
+the same programs in the app itself: it builds the production app (`ng build`; with
+`--no-build` it reuses an existing `dist/`), serves it on a free local port, opens it
+in Chromium (`PW_CHROMIUM_PATH`, else `/opt/pw-browsers/chromium` if present, else
+Playwright's own) with the memory setting 65536, pastes the program into a new
+document and clicks Run. It times the run in the page, from the Run button showing a
+run in progress until it no longer does, and checks EAX, EBX and EDI in the
+Registers panel against `bubblesort.mjs expect N`. The default sizes are 1000 and
+10000. Unlike the headless runner, this includes everything a user's Run pays for:
+the attached I/O devices, the time slicing and the live panel refresh.
+
+### Results
+
+Same container, Chromium 141, 2026-10-02 (times in ms; headless is the TypeScript
+column of `npm run bench`, browser the median of several `bench:browser` runs):
+
+| Entries | Headless | Browser, before | Browser, after |
+| ------: | -------: | --------------: | -------------: |
+|   1,000 |       81 |             175 |            100 |
+|  10,000 |    1,900 |           9,800 |          2,850 |
+
+Before, a run in the app took five times as long as headless:
+
+- The I/O devices listened to every memory write, which sent every write of Run (in
+  compiled code and in the interpreter) down the slow path that notifies listeners
+  byte by byte. Listeners now declare the address ranges they watch (the devices'
+  bytes, which follow their configuration), and only writes overlapping a watched
+  range take the slow path: 10,000 entries 9.8 s → 3.4 s.
+- Run yielded to the event loop with `setTimeout(0)` between its 12 ms slices, and
+  browsers delay nested timeouts by at least 4 ms. It now yields through a
+  `MessageChannel` (`setImmediate` in Node): 3.4 s → 2.85 s. Input is still handled
+  within a slice (about 10 ms) and rendering keeps 60 frames per second; a
+  `setTimeout(0)` started during a run waits about 21 ms instead of 11 ms.
+
+The rest of the gap to headless is mostly the live refresh of the panels every 100 ms
+(about 10 ms of rendering each, some 12 % of the run; without it, 10,000 entries take
+about 2.5 s), which is kept so that the panels follow a run. A `MachineSession` with
+devices in Node, which also pays for the time slicing, went from 6.4 s to 2.15 s for
+10,000 entries.

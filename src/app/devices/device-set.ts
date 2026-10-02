@@ -1,4 +1,4 @@
-import { DataSpace, MachineSession, SessionEvent } from '../core';
+import { DataSpace, MachineSession, MemoryRange, SessionEvent } from '../core';
 import { randomColor } from './color';
 import { ConsoleDevice } from './console';
 import { GraphicsDevice } from './graphics';
@@ -23,6 +23,9 @@ const WRITE = Object.fromEntries(
  * The four I/O devices of one document (spec 06) and their link to its machine.
  * Framework-free: it listens to memory writes and session events and tells its
  * listeners what to repaint; the UI decides when (once per animation frame).
+ * It watches only the bytes the devices show (and, for the Console, the bytes
+ * whose writes can change its text), so writes elsewhere stay on the fast path;
+ * the ranges follow every change of a device's address, size or mode.
  *
  * Configuration is per document and not persisted. On Reset the Console clears
  * (spec 04 §9.7); the other devices simply show the zeroed memory. When Load Memory
@@ -38,6 +41,9 @@ export class DeviceSet {
   private dsp: DataSpace;
   private reader: ByteReader;
   private unsubscribeMemory: () => void;
+  private readonly onMemoryWrite = (address: number, value: number) => this.onWrite(address, value);
+  /** The ranges last passed to the memory, flattened, to skip unchanged updates. */
+  private watched: number[] = [];
   private readonly unsubscribeSession: () => void;
   private readonly listeners = new Set<(change: DeviceChange) => void>();
 
@@ -52,7 +58,8 @@ export class DeviceSet {
     this.stripLight = new StripLightDevice(start);
     this.console = new ConsoleDevice(start);
     this.graphics = new GraphicsDevice(start, randomColor(random));
-    this.unsubscribeMemory = this.dsp.memory.addListener((a, v) => this.onWrite(a, v));
+    this.unsubscribeMemory = this.listen();
+    for (const device of this.devices()) device.onRangeChange = () => this.updateWatched();
     this.unsubscribeSession = session.subscribe((event) => this.onSessionEvent(event));
   }
 
@@ -78,6 +85,7 @@ export class DeviceSet {
   }
 
   dispose(): void {
+    for (const device of this.devices()) device.onRangeChange = () => undefined;
     this.unsubscribeMemory();
     this.unsubscribeSession();
     this.listeners.clear();
@@ -103,12 +111,36 @@ export class DeviceSet {
     this.unsubscribeMemory();
     this.dsp = dsp;
     this.reader = memoryReader(dsp);
-    this.unsubscribeMemory = dsp.memory.addListener((a, v) => this.onWrite(a, v));
+    this.unsubscribeMemory = this.listen();
     const inside = (address: number) =>
       address >= dsp.offset && address <= dsp.offset + dsp.memorySize;
-    for (const device of [this.sevenSegment, this.stripLight, this.console, this.graphics]) {
+    for (const device of this.devices()) {
       if (!inside(device.address)) device.address = dsp.offset;
     }
+  }
+
+  private devices() {
+    return [this.sevenSegment, this.stripLight, this.console, this.graphics] as const;
+  }
+
+  private ranges(): MemoryRange[] {
+    return this.devices().map((device) => device.range);
+  }
+
+  /** Listens to writes to the devices' bytes of the current memory. */
+  private listen(): () => void {
+    const ranges = this.ranges();
+    this.watched = ranges.flatMap((r) => [r.start, r.end]);
+    return this.dsp.memory.addListener(this.onMemoryWrite, ranges);
+  }
+
+  /** A device moved or resized: watch its new bytes. */
+  private updateWatched(): void {
+    const ranges = this.ranges();
+    const watched = ranges.flatMap((r) => [r.start, r.end]);
+    if (watched.every((v, i) => v === this.watched[i])) return;
+    this.watched = watched;
+    this.dsp.memory.watch(this.onMemoryWrite, ranges);
   }
 
   private emit(change: DeviceChange): void {

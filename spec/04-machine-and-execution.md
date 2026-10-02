@@ -77,7 +77,10 @@ Conformance tests pin the exact results (08 §3 lists where the port differs).
   in registers/memory stay valid while the program text is edited. Any other write
   clears the marker.
 - **Write notification.** Every byte write notifies listeners with
-  `(address, newByteValue)`; the I/O devices (06) use this.
+  `(address, newByteValue)`; the I/O devices (06) use this. Port note: a listener
+  may declare the address ranges it watches (the devices watch their own bytes, and
+  the ranges follow their configuration); it is then notified only for bytes inside
+  them, and writes outside every watched range skip notification altogether.
 
 ## 5. Data allocation (variables)
 

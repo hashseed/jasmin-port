@@ -48,7 +48,7 @@ import { RUNTIME_STACK_ERROR } from './parser';
  *   stamps get exactly the values `execute` would give them: the fast paths below
  *   inline `RegisterFile.setNum`, `Memory.setLittleEndian`, `DataSpace.getUpdateNum`
  *   and `DataSpace.setFlagsLazy` and fall back to the methods in every other case
- *   (memory listeners, label markers, addresses out of range).
+ *   (bytes a memory listener watches, label markers, addresses out of range).
  */
 export class CompiledRegion {
   /** The error of the last `run`, if it stopped on one, and its line. */
@@ -125,7 +125,7 @@ const INTERNALS: readonly [string, readonly string[]][] = [
       'of',
     ],
   ],
-  ['memory', ['dirty', 'stamp', 'listeners']],
+  ['memory', ['dirty', 'stamp', 'watchStart', 'watchEnd']],
   ['registers', ['dirty', 'dirtyMask', 'stamp']],
 ];
 
@@ -463,12 +463,12 @@ class RegionCompiler {
   /** `putNum(value, op, null)` for a register or memory destination. */
   private store(op: Operand, value: string): string {
     if (op.kind === 'reg') return this.storeRegister(op.arg, value);
-    // `Memory.setLittleEndian` without listeners, label markers or range errors.
+    // `Memory.setLittleEndian` without watched bytes, label markers or range errors.
     const size = op.arg.size;
     const offset = this.dsp.offset;
     const limit = this.dsp.memoryEnd - size;
     return (
-      `if (x >= ${offset} && x <= ${limit} && d.memInfo.size === 0 && M.listeners.size === 0) {\n` +
+      `if (x >= ${offset} && x <= ${limit} && d.memInfo.size === 0 && ${unwatched('x', size)}) {\n` +
       this.writeBytes(size, value) +
       `}\nelse d.putNum(${value}, ${op.address}, null);\n`
     );
@@ -488,7 +488,7 @@ class RegionCompiler {
     );
   }
 
-  /** `Memory.setLittleEndian(x, value, size)` without listeners (x checked by the caller). */
+  /** `Memory.setLittleEndian(x, value, size)` without watched bytes (x checked by the caller). */
   private writeBytes(size: number, value: string): string {
     let code = `i = x - ${this.dsp.offset}; w = ${value};\nB[i] = w; MD[i] = M.stamp;\n`;
     for (let k = 1; k < size; k++) code += `w >>>= 8; B[i + ${k}] = w; MD[i + ${k}] = M.stamp;\n`;
@@ -497,8 +497,9 @@ class RegionCompiler {
 
   // ---- stack (`Parameters.push` and `pop`) ----
   //
-  // Inline when no label markers and no memory listeners exist (then the markers
-  // that `push` and `pop` copy are all null); otherwise the line calls `execute`.
+  // Inline when no label markers exist (then the markers that `push` and `pop`
+  // copy are all null) and a push writes no watched bytes; otherwise the line
+  // calls `execute`.
 
   /** `Parameters.push` of the local `a` (`size` bytes). */
   private pushValue(size: number): string {
@@ -529,10 +530,17 @@ class RegionCompiler {
     );
   }
 
-  /** Fast stack code, else the command's `execute`; then the range check. */
-  private stack(line: number, command: Command, p: Parameters, fast: string): string {
+  /**
+   * Fast stack code, else the command's `execute`; then the range check. `pushed`
+   * is the size of the value a push writes below ESP (0 for a pop).
+   */
+  private stack(line: number, command: Command, p: Parameters, fast: string, pushed = 0): string {
+    const condition =
+      pushed === 0
+        ? STACK_FAST
+        : `${STACK_FAST} && ${unwatched(`((V[6] - ${pushed}) | 0)`, pushed)}`;
     return (
-      `if (${STACK_FAST}) {\n${fast}} else ${this.constant(command)}.execute(${this.constant(p)});\n` +
+      `if (${condition}) {\n${fast}} else ${this.constant(command)}.execute(${this.constant(p)});\n` +
       this.rangeCheck(line)
     );
   }
@@ -546,7 +554,7 @@ class RegionCompiler {
     // `execute` sets the operand's size to the operation size: keep to registers of that size.
     if (op.kind === 'reg' && op.arg.size !== p.size) return null;
     const fast = this.load('a', op) + this.pushValue(p.size);
-    return { code: this.stack(line, command, p, fast), jumps: false };
+    return { code: this.stack(line, command, p, fast, p.size), jumps: false };
   }
 
   /** POP into a register (`Pop.execute`). */
@@ -565,7 +573,7 @@ class RegionCompiler {
     const fast = `a = V[8];\n` + this.pushValue(4) + `d.setInstructionPointer(${target});\n`;
     const code =
       `V[8] = ${line + 1};\n` +
-      this.stack(line, command, p, fast) +
+      this.stack(line, command, p, fast, 4) +
       `n += ${line} - s + 1;\n` +
       this.goto(target);
     return { code, jumps: true };
@@ -860,8 +868,16 @@ function conditionExpression(condition: number, flag: (flag: number) => string):
   }
 }
 
-/** Stack code is inline only without label markers and memory listeners. */
-const STACK_FAST = 'd.memInfo.size === 0 && d.regInfo.size === 0 && M.listeners.size === 0';
+/** Stack code is inline only without label markers (and, for a push, watched bytes). */
+const STACK_FAST = 'd.memInfo.size === 0 && d.regInfo.size === 0';
+
+/**
+ * Whether no memory listener watches the `size` bytes at `address` (an int32
+ * expression): outside the hull of the watched ranges inline, else `isWatched`.
+ */
+function unwatched(address: string, size: number): string {
+  return `(${address} >= M.watchEnd || ${address} + ${size} <= M.watchStart || !M.isWatched(${address}, ${size}))`;
+}
 
 /** Unsigned little-endian read of `size` (1, 2 or 4) bytes at `B[i]`. */
 function readBytes(size: number): string {

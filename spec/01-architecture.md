@@ -96,6 +96,8 @@ Doubles for the FPU map directly to JS `number`; `Double.doubleToRawLongBits` ma
 The browser has one UI thread. Implement **Run** as a cooperative loop that executes a
 batch of lines per slice (time-boxed, e.g. ~8 ms) and yields with
 `setTimeout(0)`/`requestAnimationFrame`, so Pause, Stop and live device repaints work.
+(The port yields through a `MessageChannel`, which unlike nested `setTimeout(0)` is
+not delayed by at least 4 ms.)
 `JASMINSLEEP n` suspends the loop for `n` ms with a timer (Pause cancels the timer).
 A Web Worker is an alternative but complicates live device updates and breakpoints;
 the cooperative loop is the recommended default.

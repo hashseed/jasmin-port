@@ -1,3 +1,4 @@
+import { MemoryRange } from '../core';
 import { Rect, idiv, rectContains, roundFloat } from './geometry';
 
 export const MIN_BARS = 1;
@@ -11,13 +12,41 @@ const BAR_HEIGHT = 20;
 
 /** Configuration of one document's StripLight (spec 06 §2). */
 export class StripLightDevice {
-  bars = 16;
+  /** Called when the watched bytes move or resize (set by the DeviceSet). */
+  onRangeChange: () => void = () => undefined;
+  private addressValue: number;
+  private barCount = 16;
 
-  constructor(public address: number) {}
+  constructor(address: number) {
+    this.addressValue = address;
+  }
+
+  get address(): number {
+    return this.addressValue;
+  }
+
+  set address(address: number) {
+    this.addressValue = address;
+    this.onRangeChange();
+  }
+
+  get bars(): number {
+    return this.barCount;
+  }
+
+  set bars(bars: number) {
+    this.barCount = bars;
+    this.onRangeChange();
+  }
 
   /** `ceil(bars / 8)` bytes, little-endian. */
   get byteCount(): number {
     return Math.ceil(this.bars / 8);
+  }
+
+  /** The bytes the lamps show. */
+  get range(): MemoryRange {
+    return { start: this.address, end: this.address + this.byteCount };
   }
 
   watches(address: number): boolean {
