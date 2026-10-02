@@ -203,7 +203,16 @@ message until the next Step). Run in time-sliced batches (01 §2) so the UI stay
 repaint live during the run. *Port addition (owner's request, 2026-10-02):* the
 other panels (registers, flags, memory and stack, FPU) also refresh during the run, at
 most every 100 ms; the change counter still advances only when the run stops, so bold
-marks are settled then. An infinite loop must stay pausable.
+marks are settled then. An infinite loop must stay pausable. A live refresh is
+requested from a time slice but done in the next animation frame, outside Run's
+slices: at most one frame is pending and at most one refresh happens per frame (in Node,
+which has no frames, it happens at the end of the slice). Each panel does only what it
+shows: a panel out of view (a hidden document tab, a section scrolled out of the narrow
+layout) skips live refreshes and catches up as soon as it is shown again; the editor
+only moves its execution mark; the I/O devices repaint on writes to their bytes, not on
+live refreshes; the accent animation of changed values is off while running. When the
+run stops (end, breakpoint, error, Pause, Stop), a full refresh reaches every panel,
+visible or not, so the state shown afterwards is exact.
 
 *Port note:* Run may execute lines it has already parsed in this run as compiled code
 (ranges of lines turned into JavaScript functions, `src/app/core/compiled-run.ts`)

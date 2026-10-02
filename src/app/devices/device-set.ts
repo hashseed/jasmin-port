@@ -101,7 +101,8 @@ export class DeviceSet {
   private onSessionEvent(event: SessionEvent): void {
     if (event.kind === 'machine-replaced') {
       this.attach(this.session.dsp);
-    } else if (event.kind === 'refresh') {
+    } else if (event.kind === 'refresh' && !event.live) {
+      // During Run, the writes to the watched bytes already repaint the devices.
       if (event.reset) this.console.clear();
       this.refresh();
     }

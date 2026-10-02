@@ -1,5 +1,6 @@
 import { ChangeDetectionStrategy, Component, computed, input, signal } from '@angular/core';
 import { DocumentStore } from '../../../services/document-store';
+import { inViewport, liveVersion } from '../../common/in-viewport';
 import { SegmentedControl } from '../../common/segmented-control';
 import { EditCell } from '../edit-cell';
 import { RADIX_OPTIONS, Radix } from '../radix';
@@ -13,6 +14,7 @@ import { RegisterView, registerViews, writeRegister } from './register-view';
 @Component({
   selector: 'app-registers-panel',
   changeDetection: ChangeDetectionStrategy.OnPush,
+  host: { '[class.running]': 'doc().running()' },
   imports: [SegmentedControl, EditCell],
   template: `
     <app-segmented-control
@@ -146,6 +148,10 @@ import { RegisterView, registerViews, writeRegister } from './register-view';
       font-weight: 700;
       animation: changed-accent 0.8s ease-out;
     }
+    /* No accent while Run refreshes the panel live: it would repaint every frame. */
+    :host(.running) .changed {
+      animation: none;
+    }
     .bytes {
       display: grid;
       grid-template-columns: repeat(4, minmax(0, 1fr));
@@ -187,6 +193,8 @@ export class RegistersPanel {
   readonly doc = input.required<DocumentStore>();
   /** The memory panel's `highlight` toggle (spec 02 §10.1). */
   readonly highlight = input(false);
+  /** The document's version; out of view, live refreshes are skipped. */
+  private readonly version = liveVersion(this.doc, inViewport());
 
   protected readonly radixOptions = RADIX_OPTIONS;
   /** `±dec` is selected at start (spec 02 §7.1). */
@@ -196,7 +204,7 @@ export class RegistersPanel {
 
   protected readonly registers = computed(() => {
     const doc = this.doc();
-    doc.version();
+    this.version();
     return registerViews(doc.session.dsp, this.radix());
   });
 

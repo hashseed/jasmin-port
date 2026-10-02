@@ -1,5 +1,6 @@
 import { ChangeDetectionStrategy, Component, computed, input } from '@angular/core';
 import { DocumentStore } from '../../../services/document-store';
+import { inViewport, liveVersion } from '../../common/in-viewport';
 import { EditCell } from '../edit-cell';
 
 /** One row of the FPU table: physical register `R_index`. */
@@ -103,10 +104,12 @@ export interface FpuRow {
 })
 export class FpuPanel {
   readonly doc = input.required<DocumentStore>();
+  /** The document's version; out of view, live refreshes are skipped. */
+  private readonly version = liveVersion(this.doc, inViewport());
 
   protected readonly rows = computed<FpuRow[]>(() => {
     const doc = this.doc();
-    doc.version();
+    this.version();
     const fpu = doc.session.dsp.fpu;
     return Array.from({ length: 8 }, (_, index) => {
       const name = fpu.getRegisterName(index);

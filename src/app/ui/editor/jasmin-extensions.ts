@@ -3,6 +3,7 @@ import {
   Extension,
   RangeSetBuilder,
   StateEffect,
+  StateEffectType,
   StateField,
 } from '@codemirror/state';
 import {
@@ -26,6 +27,13 @@ import { LabelKind, highlightLine } from './highlight';
  * breakpoints, EIP): re-reads highlights, breakpoints and the execution mark.
  */
 export const refreshEffect = StateEffect.define<null>();
+
+/**
+ * Dispatched while Run is in progress (a live refresh, spec 04 §9.3): re-reads
+ * only the execution mark, since the text, its highlighting and the breakpoints
+ * cannot change during a run.
+ */
+export const markEffect = StateEffect.define<null>();
 
 /** Sets how many empty gutter rows follow the last line (spec 02 §6.2). */
 const setPhantomRows = StateEffect.define<number>();
@@ -107,8 +115,12 @@ function buildHighlights(view: EditorView, host: EditorHost): DecorationSet {
   return builder.finish();
 }
 
+function hasEffect(update: ViewUpdate, type: StateEffectType<null>): boolean {
+  return update.transactions.some((tr) => tr.effects.some((e) => e.is(type)));
+}
+
 function isRefresh(update: ViewUpdate): boolean {
-  return update.transactions.some((tr) => tr.effects.some((e) => e.is(refreshEffect)));
+  return hasEffect(update, refreshEffect);
 }
 
 function highlighter(host: EditorHost): Extension {
@@ -198,7 +210,7 @@ function markField(host: EditorHost): StateField<MarkState> {
         if (effect.is(setPhantomRows) && effect.value !== rows) {
           rows = effect.value;
           changed = true;
-        } else if (effect.is(refreshEffect)) {
+        } else if (effect.is(refreshEffect) || effect.is(markEffect)) {
           changed = true;
         }
       }
@@ -343,7 +355,8 @@ function rowGutter(host: EditorHost): Extension {
     },
     widgetMarker: (_view, widget) =>
       widget instanceof PhantomRows ? new PhantomMarker(widget) : null,
-    lineMarkerChange: (update) => update.docChanged || isRefresh(update),
+    lineMarkerChange: (update) =>
+      update.docChanged || isRefresh(update) || hasEffect(update, markEffect),
     initialSpacer: () => new SpacerMarker(),
     domEventHandlers: {
       mousedown(view, _line, event) {
