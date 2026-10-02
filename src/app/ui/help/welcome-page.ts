@@ -1,8 +1,8 @@
 import { ChangeDetectionStrategy, Component, input } from '@angular/core';
-import { PORT_VERSION } from '../../version';
+import { PORT_VERSION, SOURCE_URL } from '../../version';
 
 export { PORT_VERSION };
-export const PORT_URL = 'https://github.com/hashseed/jasmin-port';
+export const PORT_URL = SOURCE_URL;
 
 /** Credits of `Welcome.htm`, in its order (spec 09 §5). */
 const CREDITS: readonly { readonly heading: string; readonly names: readonly string[] }[] = [
@@ -98,6 +98,15 @@ const CREDITS: readonly { readonly heading: string; readonly names: readonly str
     }
     .credits .group {
       margin: 0;
+    }
+    @media (max-width: 799px) {
+      .credits {
+        grid-template-columns: 1fr;
+        text-align: center;
+      }
+      .copyright {
+        text-align: center;
+      }
     }
     .authors {
       display: grid;
