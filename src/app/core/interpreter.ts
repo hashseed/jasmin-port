@@ -25,6 +25,13 @@ export type RunOutcome =
   | { readonly kind: 'sleep'; readonly ms: number };
 
 const END: RunOutcome = { kind: 'end' };
+
+/**
+ * Line-by-line visits of a line before Run compiles the lines around it: code that
+ * runs only a few times is not worth compiling (and its neighbors may not have
+ * been parsed yet, which would cut the region short).
+ */
+const COMPILE_AFTER = 8;
 const CONTINUE: RunOutcome = { kind: 'continue' };
 
 interface CachedLine {
@@ -54,10 +61,12 @@ export class Interpreter {
    */
   private regions: (CompiledRegion | undefined)[] = [];
   private compiledFor: ((line: number) => boolean) | null = null;
+  /** Line-by-line visits per line in this run, while the line has no region. */
+  private visits = new Uint32Array(0);
   /** Whether Run may use compiled code (tests compare it with the plain loop). */
   useCompiledCode = true;
   /** Lines Run executed as compiled code and line by line, for statistics. */
-  readonly runStats = { compiled: 0, interpreted: 0 };
+  readonly runStats = { compiled: 0, interpreted: 0, regions: 0 };
 
   constructor(
     readonly dsp: DataSpace,
@@ -116,6 +125,7 @@ export class Interpreter {
   private dropCompiled(): void {
     this.regions = [];
     this.compiledFor = null;
+    this.visits = new Uint32Array(this.program.lineCount);
   }
 
   /**
@@ -131,7 +141,9 @@ export class Interpreter {
       this.regions = [];
       this.compiledFor = isBreakpoint;
     }
+    if (this.visits.length !== lineCount) this.visits = new Uint32Array(lineCount);
     const regions = this.regions;
+    const visits = this.visits;
     const stats = this.runStats;
     let outcome = CONTINUE;
     let executed = false;
@@ -149,7 +161,12 @@ export class Interpreter {
         this.skipBreakpointAt = -1;
       }
       let region = regions[line];
-      if (region === undefined && this.useCompiledCode && this.cache[line]) {
+      if (
+        region === undefined &&
+        this.useCompiledCode &&
+        ++visits[line] > COMPILE_AFTER &&
+        this.cache[line]
+      ) {
         region = this.compileAround(line, isBreakpoint);
       }
       // Compiled code assumes no out-of-range state is left over (it only tests it
@@ -222,6 +239,7 @@ export class Interpreter {
       end++;
     }
     const region = compileRegion(this.dsp, cache, start, end, isBreakpoint);
+    this.runStats.regions++;
     for (let i = start; i <= end; i++) this.regions[i] = region;
     return region;
   }
