@@ -178,6 +178,17 @@ describe('Run (spec 04 §9.3)', () => {
     expect(reg(s, 'EAX')).toBe(eax);
   });
 
+  it('stops at a breakpoint set while running (compiled code knows only the old ones)', () => {
+    // Five lines: every batch of 10 lines runs whole iterations of compiled code.
+    const { s, scheduler } = session('top: inc eax\nadd ebx, 2\nnop\nnop\njmp top');
+    s.run();
+    scheduler.advance(200);
+    expect(s.running).toBe(true);
+    s.toggleBreakpoint(1);
+    scheduler.advance(200);
+    expect([s.running, eip(s), reg(s, 'EBX')]).toEqual([false, 1, 2 * reg(s, 'EAX') - 2]);
+  });
+
   it('refreshes the panels while running, at most every 100 ms', () => {
     const { s, scheduler } = session('top: inc eax\njmp top');
     const seen: number[] = [];
