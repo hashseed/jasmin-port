@@ -197,8 +197,10 @@ run.
 
 *Port note:* Run clears the error line when it starts (the original left the previous
 message until the next Step). Run in time-sliced batches (01 §2) so the UI stays responsive; I/O devices
-repaint live during the run; other panels refresh when the run stops. An infinite loop
-must stay pausable.
+repaint live during the run. *Port addition (owner's request, 2026-10-02):* the
+other panels (registers, flags, memory and stack, FPU) also refresh during the run, at
+most every 100 ms; the change counter still advances only when the run stops, so bold
+marks are settled then. An infinite loop must stay pausable.
 
 ### 9.4 Execute current line (F9, toolbar)
 Parses and executes the line containing the caret, independent of EIP. EIP is not

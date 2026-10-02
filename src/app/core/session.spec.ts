@@ -178,6 +178,19 @@ describe('Run (spec 04 §9.3)', () => {
     expect(reg(s, 'EAX')).toBe(eax);
   });
 
+  it('refreshes the panels while running, at most every 100 ms', () => {
+    const { s, scheduler } = session('top: inc eax\njmp top');
+    const seen: number[] = [];
+    s.subscribe((e) => e.kind === 'refresh' && seen.push(reg(s, 'EAX')));
+    s.run();
+    scheduler.advance(1000);
+    expect(seen.length).toBeGreaterThanOrEqual(5);
+    expect(seen.length).toBeLessThanOrEqual(10);
+    // Each refresh shows the registers as they are at that moment.
+    for (let i = 1; i < seen.length; i++) expect(seen[i]).toBeGreaterThan(seen[i - 1]);
+    s.pause();
+  });
+
   it('waits for JASMINSLEEP, and Pause cuts it short', () => {
     const { s, scheduler } = session('jasminsleep 500\nmov eax, 1');
     s.run();

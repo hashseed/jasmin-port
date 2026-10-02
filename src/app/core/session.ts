@@ -29,6 +29,8 @@ export interface SessionOptions {
   readonly sliceMs?: number;
   /** Lines executed between clock checks. */
   readonly batchSteps?: number;
+  /** Shortest time between panel refreshes while a run is in progress, in ms. */
+  readonly liveRefreshMs?: number;
 }
 
 export type SessionEvent =
@@ -59,6 +61,8 @@ export class MachineSession {
   private readonly listeners = new Set<(event: SessionEvent) => void>();
   private readonly sliceMs: number;
   private readonly batchSteps: number;
+  private readonly liveRefreshMs: number;
+  private lastLiveRefresh = 0;
   private readonly isBreakpoint = (line: number) => this.breakpointLines.has(line);
 
   constructor(
@@ -68,6 +72,7 @@ export class MachineSession {
   ) {
     this.sliceMs = options.sliceMs ?? 12;
     this.batchSteps = options.batchSteps ?? 1000;
+    this.liveRefreshMs = options.liveRefreshMs ?? 100;
     this.dsp = new DataSpace(config.memorySize, config.offset);
     this.program = new Program(this.dsp);
     this.interpreter = new Interpreter(this.dsp, this.program);
@@ -131,6 +136,7 @@ export class MachineSession {
     this.error = null;
     this.interpreter.beginRun(this.isBreakpoint);
     this.emit({ kind: 'running', running: true });
+    this.lastLiveRefresh = this.scheduler.now();
     this.schedule(0);
   }
 
@@ -224,9 +230,11 @@ export class MachineSession {
       switch (outcome.kind) {
         case 'continue':
           if (this.scheduler.now() < deadline) continue;
+          this.liveRefresh();
           this.schedule(0);
           return;
         case 'sleep':
+          this.liveRefresh();
           this.schedule(outcome.ms);
           return;
         case 'error':
@@ -239,6 +247,14 @@ export class MachineSession {
           return;
       }
     }
+  }
+
+  /** Lets the panels follow a run in progress, at most every `liveRefreshMs` (spec 04 §9.3). */
+  private liveRefresh(): void {
+    const now = this.scheduler.now();
+    if (now - this.lastLiveRefresh < this.liveRefreshMs) return;
+    this.lastLiveRefresh = now;
+    this.emit({ kind: 'refresh', reset: false });
   }
 
   private finishRun(): void {
