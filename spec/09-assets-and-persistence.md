@@ -186,5 +186,7 @@ UTF-8 JSON, extension `.mem` (Save appends it like `.asm`):
   default is GPL-2.0), with `LICENSE.md` copied to the repository root.
 - Keep the credits block of `Welcome.htm` (chair, contributors, original version
   `1.5.11 (2016-10-28)`) and add a line for the web port and its version (02 §12.1).
+  *Port note (owner's decision, 2026-10-02):* the Welcome page has no credits; they
+  are in the README's "License and credits" section and `public/NOTICE.txt`.
 - The bug-report line on the Welcome page points to the original authors' address;
   the port replaces it with the port's issue tracker.
