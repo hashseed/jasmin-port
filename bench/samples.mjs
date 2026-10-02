@@ -4,7 +4,7 @@
  * shift-heavy CRC-32, since no sample shifts) headlessly, checks every result and
  * prints the median run time of each.
  *
- *   node bench/samples.mjs [--runs R] [--runner bench.js ...] [--list] [--emit DIR] [case ...]
+ *   node bench/samples.mjs [--runs R] [--batch N] [--runner bench.js ...] [--list] [--emit DIR] [case ...]
  *
  * Each case starts from the sample's own text and changes only its input (or, for
  * the device samples, replaces JASMINSLEEP by a counter so the run ends), so the
@@ -12,6 +12,9 @@
  * process (`src/headless/bench.ts`: Run's batches without step limit, parsing not
  * timed). The final registers and memory are checked against a JavaScript
  * computation of the same result.
+ *
+ * --batch runs Run's batches of N lines (BENCH_BATCH; the app's batches are 1000 lines)
+ * instead of 1,000,000.
  *
  * --emit writes the programs to DIR as <case>.asm (with the memory size in the first
  * line) instead of running them.
@@ -337,8 +340,10 @@ function main(args) {
   const runners = [];
   const names = [];
   let emit = null;
+  let batch = null;
   for (let i = 0; i < args.length; i++) {
     if (args[i] === '--runs') runs = Number(args[++i]);
+    else if (args[i] === '--batch') batch = args[++i];
     else if (args[i] === '--emit') emit = resolve(args[++i]);
     else if (args[i] === '--runner') runners.push(resolve(args[++i]));
     else if (args[i] === '--list') {
@@ -349,7 +354,7 @@ function main(args) {
   const unknown = names.filter((n) => !(n in CASES));
   if (unknown.length || !(runs >= 1)) {
     process.stderr.write(
-      `usage: node bench/samples.mjs [--runs R] [--runner bench.js ...] [--list] [--emit DIR] [${Object.keys(CASES).join('|')} ...]\n`,
+      `usage: node bench/samples.mjs [--runs R] [--batch N] [--runner bench.js ...] [--list] [--emit DIR] [${Object.keys(CASES).join('|')} ...]\n`,
     );
     return 2;
   }
@@ -393,6 +398,7 @@ function main(args) {
           const run = spawnSync(process.execPath, [runner, file, String(memory)], {
             encoding: 'utf8',
             maxBuffer: 1 << 28,
+            env: batch ? { ...process.env, BENCH_BATCH: batch } : process.env,
           });
           const ms = /ms=(\d+)/.exec(run.stderr);
           if (run.status !== 0 || !ms) throw new Error(`${runner} failed: ${run.stderr}`);

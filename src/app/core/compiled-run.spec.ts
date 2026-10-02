@@ -488,8 +488,8 @@ again:
     for (const budgets of [[1], [2, 3, 5], [7, 11], [10, 13], [997]]) {
       const { fast, outcomes } = compare(source, budgets, new Set(), 60);
       expect(outcomes.every((o) => o.kind === 'continue')).toBe(true);
-      // Entering the loop needs room for its 10 lines.
-      if (budgets[0] >= 10) expect(fast.interpreter.runStats.compiled).toBeGreaterThan(0);
+      // With less room than the loop's 10 lines, the stepwise code runs.
+      if (budgets[0] > 1) expect(fast.interpreter.runStats.compiled).toBeGreaterThan(0);
     }
     // Exact state after a partial iteration, without comparing to the plain loop.
     const m = machine(source, true);
@@ -503,6 +503,50 @@ again:
     expect(m.dsp.isDirty(m.dsp.getRegisterArgument('BL')!, 0)).toBe(true);
     expect(m.dsp.isDirty(m.dsp.getRegisterArgument('BH')!, 0)).toBe(false);
     expect(m.dsp.isDirty(m.dsp.getRegisterArgument('EBX')!, 0)).toBe(false);
+  });
+
+  it('stops inside a straight-line run after exactly the budget, with all flags (Pause)', () => {
+    // 20 lines per iteration; the flags of most lines are dead in the normal code.
+    const source = `mov ecx, 50
+  mov edi, 600
+top: add eax, ecx
+  sub ebx, 7
+  xor edx, eax
+  shl esi, 3
+  mov [edi], eax
+  inc dword [edi+4]
+  add esi, [edi]
+  push edx
+  imul ebp, ebx, 5
+  pop edx
+  and edx, 0xffff
+  sar edx, 1
+  setc byte [edi+8]
+  neg ebx
+  rol eax, 5
+  cmp eax, ebx
+  adc ebp, 1
+  dec ecx
+  jnz top`;
+    for (const budgets of [[1], [3, 7], [13, 17, 19], [21, 23], [997, 3]]) {
+      const { fast, outcomes } = compare(source, budgets, new Set(), 1000);
+      expect(outcomes.at(-1)).toEqual({ kind: 'end' });
+      // Only the iterations before the loop is compiled run line by line, also when
+      // every batch stops inside the loop.
+      expect(fast.interpreter.runStats.interpreted).toBeLessThan(200);
+      expect(fast.interpreter.runStats.compiled).toBeGreaterThan(750);
+    }
+    // The stepwise code checks after every line and records every line's flags.
+    const m = machine(source, true);
+    const lines = m.program.results;
+    const isBreakpoint = () => false;
+    const normal = compileRegion(m.dsp, lines, 0, lines.length - 1, isBreakpoint);
+    const stepwise = normal.stepwise();
+    expect(stepwise).not.toBe(normal);
+    expect(stepwise.entryCost(3)).toBe(1);
+    expect(normal.entryCost(3)).toBe(18);
+    const recorded = (code: string) => code.match(/d\.lazyFlags = /g)?.length ?? 0;
+    expect(recorded(stepwise.source)).toBeGreaterThan(recorded(normal.source));
   });
 
   it('writes registers back on a jump out of the region and at a breakpoint', () => {

@@ -57,7 +57,10 @@ import { RUNTIME_STACK_ERROR } from './parser';
  *   overwrite them all before anything can see them (`deadFlags`);
  * - it never executes more than `budget` lines: entering at a line needs room for
  *   all lines up to the next jump, and every jump checks the budget again, so a
- *   tight loop returns to the run loop when the budget is used up;
+ *   tight loop returns to the run loop when the budget is used up (one check per
+ *   straight-line run). Where less budget is left than the next straight-line run
+ *   needs, the run loop uses the region's `stepwise` code, which checks after every
+ *   line, so a batch stops after exactly its number of lines;
  * - it never runs into a line with a breakpoint (the region knows them; the
  *   interpreter drops its regions when breakpoints change);
  * - on an error EIP is left on the failing line (07 Q-E-1) and the error is stored
@@ -98,6 +101,9 @@ export class CompiledRegion {
   run: (pc: number, budget: number) => number = () => 0;
   /** The generated source, for tests and debugging. */
   source = '';
+  /** Compiles `stepwise` (see there). */
+  compileStepwise: (() => CompiledRegion) | null = null;
+  private stepwiseCode: CompiledRegion | null = null;
 
   constructor(
     readonly start: number,
@@ -111,6 +117,16 @@ export class CompiledRegion {
   /** Lines that `run(pc, ...)` executes before it first checks the budget. */
   entryCost(pc: number): number {
     return this.cost[pc - this.start];
+  }
+
+  /**
+   * The same lines compiled to check the budget after every line (entry cost 1),
+   * for the end of a batch whose budget runs out inside a straight-line run of
+   * `run`, compiled when first needed. Its lines record all their flags.
+   */
+  stepwise(): CompiledRegion {
+    this.stepwiseCode ??= this.compileStepwise ? this.compileStepwise() : this;
+    return this.stepwiseCode;
   }
 }
 
@@ -141,11 +157,19 @@ export function compileRegion(
   start: number,
   end: number,
   isBreakpoint: (line: number) => boolean,
+  stepwise = false,
 ): CompiledRegion {
-  const region = new RegionCompiler(dsp, lines, start, end, isBreakpoint, true).compile();
-  if (region.source.length <= MAX_LOCALS_SOURCE) return region;
-  const plain = new RegionCompiler(dsp, lines, start, end, isBreakpoint, false).compile();
-  return plain.source.length < region.source.length ? plain : region;
+  const compile = (locals: boolean) =>
+    new RegionCompiler(dsp, lines, start, end, isBreakpoint, locals, stepwise).compile();
+  let region = compile(true);
+  if (region.source.length > MAX_LOCALS_SOURCE) {
+    const plain = compile(false);
+    if (plain.source.length < region.source.length) region = plain;
+  }
+  if (!stepwise) {
+    region.compileStepwise = () => compileRegion(dsp, lines, start, end, isBreakpoint, true);
+  }
+  return region;
 }
 
 /** Whether Run runs `line` as specialized code (for statistics and tests). */
@@ -256,6 +280,8 @@ class RegionCompiler {
     isBreakpoint: (line: number) => boolean,
     /** Whether EAX..EBP live in locals (see `CompiledRegion`), else in `V`. */
     private readonly locals: boolean,
+    /** Whether the code checks the budget after every line (`CompiledRegion.stepwise`). */
+    private readonly stepwise = false,
   ) {
     this.cost = new Int32Array(end - start + 1);
     this.writes = new Int32Array(end - start + 1);
@@ -269,9 +295,10 @@ class RegionCompiler {
     for (let line = this.end; line >= this.start; line--) {
       const i = line - this.start;
       const stops = jumps(this.lines[line]!) || line === this.end || this.isStop(line + 1);
-      this.cost[i] = stops ? 1 : this.cost[i + 1] + 1;
+      this.cost[i] = stops || this.stepwise ? 1 : this.cost[i + 1] + 1;
     }
-    this.dead = this.deadFlags();
+    // Stepwise code may stop after any line, so every line's flags are visible.
+    this.dead = this.stepwise ? new Uint8Array(this.end - this.start + 1) : this.deadFlags();
     const cases: string[] = [];
     let specialized = 0;
     let previous: FlagState | undefined;
@@ -294,6 +321,9 @@ class RegionCompiler {
       // Falling into a breakpoint line, or off the region, returns to the run loop.
       if (!result.jumps && (line === this.end || this.isStop(line + 1))) {
         body += `n += ${line} - s + 1; o = ${line + 1}; break out;\n`;
+      } else if (!result.jumps && this.stepwise) {
+        // Stepwise: stops after the line that uses up the budget.
+        body += `if (n + ${line} - s + 1 >= budget) { n += ${line} - s + 1; o = ${line + 1}; break out; }\n`;
       }
       cases.push(`case ${line}:\n${body}`);
       previous = result.flags;
