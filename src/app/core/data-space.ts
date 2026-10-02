@@ -227,8 +227,7 @@ export class DataSpace {
   // ---- flags ----
 
   get fCarry(): boolean {
-    if (this.lazyFlags & Flag.CF) this.materializeFlags(Flag.CF);
-    return this.cf;
+    return this.lazyFlags & Flag.CF ? this.lazyCarry() : this.cf;
   }
 
   set fCarry(value: boolean) {
@@ -237,8 +236,7 @@ export class DataSpace {
   }
 
   get fOverflow(): boolean {
-    if (this.lazyFlags & Flag.OF) this.materializeFlags(Flag.OF);
-    return this.of;
+    return this.lazyFlags & Flag.OF ? this.lazyOverflow() : this.of;
   }
 
   set fOverflow(value: boolean) {
@@ -247,8 +245,7 @@ export class DataSpace {
   }
 
   get fSign(): boolean {
-    if (this.lazyFlags & Flag.SF) this.materializeFlags(Flag.SF);
-    return this.sf;
+    return this.lazyFlags & Flag.SF ? this.lazySign() : this.sf;
   }
 
   set fSign(value: boolean) {
@@ -257,8 +254,7 @@ export class DataSpace {
   }
 
   get fZero(): boolean {
-    if (this.lazyFlags & Flag.ZF) this.materializeFlags(Flag.ZF);
-    return this.zf;
+    return this.lazyFlags & Flag.ZF ? this.lazyZero() : this.zf;
   }
 
   set fZero(value: boolean) {
@@ -267,8 +263,7 @@ export class DataSpace {
   }
 
   get fParity(): boolean {
-    if (this.lazyFlags & Flag.PF) this.materializeFlags(Flag.PF);
-    return this.pf;
+    return this.lazyFlags & Flag.PF ? this.lazyParity() : this.pf;
   }
 
   set fParity(value: boolean) {
@@ -277,8 +272,7 @@ export class DataSpace {
   }
 
   get fAuxiliary(): boolean {
-    if (this.lazyFlags & Flag.AF) this.materializeFlags(Flag.AF);
-    return this.af;
+    return this.lazyFlags & Flag.AF ? this.lazyAuxiliary() : this.af;
   }
 
   set fAuxiliary(value: boolean) {
@@ -288,9 +282,9 @@ export class DataSpace {
 
   /**
    * Records an operation of `size` <= 4 bytes that sets the `flags` (`Flag` bits)
-   * as `JasminCommand.setFlags` does; they are computed when first read. `a`, `b`
-   * and `result` are the Java long values as exact integers (|value| < 2^53), or
-   * any integers with the same bits 0..32. For subtraction `b` is the negated
+   * as `JasminCommand.setFlags` does; they are computed when read. `a`, `b` and
+   * `result` are the Java long values as exact integers (|value| < 2^53), or any
+   * integers with the same bits 0..32. For subtraction `b` is the negated
    * subtrahend and `subtrahend` the original one (AF, 07 Q-F-1); otherwise both are
    * the second operand. Flags still pending from the previous operation that this
    * one does not set are computed first (INC keeps CF, shifts keep AF, ...).
@@ -313,33 +307,56 @@ export class DataSpace {
     this.lazyFlags = flags;
   }
 
-  /** Computes the pending flags among `flags` (all pending ones by default). */
+  /**
+   * Stores the pending flags among `flags` (all pending ones by default). Reads do
+   * not need this: they compute a pending flag from the recorded operation.
+   */
   materializeFlags(flags = this.lazyFlags): void {
     const pending = flags & this.lazyFlags;
     if (pending === 0) return;
+    if (pending & Flag.CF) this.cf = this.lazyCarry();
+    if (pending & Flag.OF) this.of = this.lazyOverflow();
+    if (pending & Flag.SF) this.sf = this.lazySign();
+    if (pending & Flag.ZF) this.zf = this.lazyZero();
+    if (pending & Flag.PF) this.pf = this.lazyParity();
+    if (pending & Flag.AF) this.af = this.lazyAuxiliary();
     this.lazyFlags &= ~pending;
+  }
+
+  // The flags of the recorded operation (`JasminCommand.setFlags`).
+
+  /** Bit `size * 8` of the result: carry (or borrow) out of the operand. */
+  private lazyCarry(): boolean {
     const bits = this.lazySize * 8;
-    const signShift = bits - 1;
     const result = this.lazyResult;
-    if (pending & Flag.ZF) {
-      this.zf = (bits === 32 ? result | 0 : result & ((1 << bits) - 1)) === 0;
-    }
-    if (pending & Flag.SF) this.sf = ((result >> signShift) & 1) === 1;
-    if (pending & Flag.PF) this.pf = EVEN_PARITY[result & 0xff] === 1;
-    if (pending & Flag.CF) {
-      // Bit `bits` of the result: carry (or borrow) out of the operand.
-      this.cf = (bits === 32 ? Math.floor(result / TWO_32) & 1 : (result >> bits) & 1) === 1;
-    }
-    if (pending & Flag.OF) {
-      const aSign = (this.lazyA >> signShift) & 1;
-      const bSign = (this.lazyB >> signShift) & 1;
-      const resultSign = (result >> signShift) & 1;
-      this.of = aSign === bSign && resultSign !== aSign;
-    }
-    if (pending & Flag.AF) {
-      // Carry or borrow out of bit 3 (07 Q-F-1): bit 4 of a ^ b ^ result.
-      this.af = ((this.lazyA ^ this.lazySubtrahend ^ result) & 0x10) !== 0;
-    }
+    return (bits === 32 ? Math.floor(result / TWO_32) & 1 : (result >> bits) & 1) === 1;
+  }
+
+  private lazyOverflow(): boolean {
+    const signShift = this.lazySize * 8 - 1;
+    const aSign = (this.lazyA >> signShift) & 1;
+    const bSign = (this.lazyB >> signShift) & 1;
+    const resultSign = (this.lazyResult >> signShift) & 1;
+    return aSign === bSign && resultSign !== aSign;
+  }
+
+  private lazySign(): boolean {
+    return ((this.lazyResult >> (this.lazySize * 8 - 1)) & 1) === 1;
+  }
+
+  private lazyZero(): boolean {
+    const bits = this.lazySize * 8;
+    const result = this.lazyResult;
+    return (bits === 32 ? result | 0 : result & ((1 << bits) - 1)) === 0;
+  }
+
+  private lazyParity(): boolean {
+    return EVEN_PARITY[this.lazyResult & 0xff] === 1;
+  }
+
+  /** Carry or borrow out of bit 3 (07 Q-F-1): bit 4 of a ^ subtrahend ^ result. */
+  private lazyAuxiliary(): boolean {
+    return ((this.lazyA ^ this.lazySubtrahend ^ this.lazyResult) & 0x10) !== 0;
   }
 
   get flags(): FlagState {
