@@ -1,4 +1,5 @@
 import { Command } from './command';
+import { CompiledRegion, MAX_REGION_LINES, compileRegion } from './compiled-run';
 import { DataSpace } from './data-space';
 import { Parameters } from './parameters';
 import { ParseError } from './parse-error';
@@ -45,6 +46,18 @@ export class Interpreter {
    */
   private cache: (CachedLine | undefined)[] = [];
   private skipBreakpointAt = -1;
+  /**
+   * Run's compiled code (`compiled-run.ts`): the region of each line, if compiled.
+   * Built from the parse cache and the breakpoints of `compiledFor`, so dropped with
+   * the cache (each run starts afresh: text, Reset and Load Memory cannot change a
+   * run in progress) and when the breakpoints change.
+   */
+  private regions: (CompiledRegion | undefined)[] = [];
+  private compiledFor: ((line: number) => boolean) | null = null;
+  /** Whether Run may use compiled code (tests compare it with the plain loop). */
+  useCompiledCode = true;
+  /** Lines Run executed as compiled code and line by line, for statistics. */
+  readonly runStats = { compiled: 0, interpreted: 0 };
 
   constructor(
     readonly dsp: DataSpace,
@@ -87,19 +100,42 @@ export class Interpreter {
    */
   beginRun(isBreakpoint: (line: number) => boolean): void {
     this.cache = [];
+    this.dropCompiled();
     const ip = this.dsp.getInstructionPointer();
     this.skipBreakpointAt = isBreakpoint(ip) ? ip : -1;
   }
 
-  /** Runs up to `maxSteps` lines of the current run. */
+  /**
+   * Drops Run's compiled code. Call when breakpoints change during a run (the code
+   * does not run into breakpoint lines it knows of).
+   */
+  breakpointsChanged(): void {
+    this.dropCompiled();
+  }
+
+  private dropCompiled(): void {
+    this.regions = [];
+    this.compiledFor = null;
+  }
+
+  /**
+   * Runs up to `maxSteps` lines of the current run. Lines run from the parse cache,
+   * one by one or, once they ran before, as compiled code (spec 04 §9.3 port note).
+   */
   runSteps(maxSteps: number, isBreakpoint: (line: number) => boolean): RunOutcome {
     const dsp = this.dsp;
     const registers = dsp.registers;
     // Nothing else runs during a batch, so the program cannot change.
     const lineCount = this.program.lineCount;
+    if (isBreakpoint !== this.compiledFor) {
+      this.regions = [];
+      this.compiledFor = isBreakpoint;
+    }
+    const regions = this.regions;
+    const stats = this.runStats;
     let outcome = CONTINUE;
     let executed = false;
-    for (let n = 0; n < maxSteps; n++) {
+    for (let n = 0; n < maxSteps;) {
       const line = registers.instructionPointer;
       if (line < 0 || line >= lineCount) {
         outcome = END;
@@ -112,6 +148,33 @@ export class Interpreter {
         }
         this.skipBreakpointAt = -1;
       }
+      let region = regions[line];
+      if (region === undefined && this.useCompiledCode && this.cache[line]) {
+        region = this.compileAround(line, isBreakpoint);
+      }
+      // Compiled code assumes no out-of-range state is left over (it only tests it
+      // after lines that can set it); a leftover one runs line by line.
+      if (region && region.entryCost(line) <= maxSteps - n && !dsp.addressOutOfRange()) {
+        executed = true;
+        const count = region.run(line, maxSteps - n);
+        n += count;
+        stats.compiled += count;
+        const error = region.error;
+        if (error) {
+          region.error = null;
+          dsp.pendingSleepMs = 0;
+          outcome = { kind: 'error', line: region.errorLine, error };
+          break;
+        }
+        if (dsp.pendingSleepMs > 0) {
+          outcome = { kind: 'sleep', ms: dsp.pendingSleepMs };
+          dsp.pendingSleepMs = 0;
+          break;
+        }
+        continue;
+      }
+      n++;
+      stats.interpreted++;
       // EIP's change stamp is set once below.
       registers.moveInstructionPointer(line + 1);
       executed = true;
@@ -138,7 +201,29 @@ export class Interpreter {
   endRun(): void {
     this.dsp.updateDirty();
     this.cache = [];
+    this.dropCompiled();
     this.skipBreakpointAt = -1;
+  }
+
+  /**
+   * Compiles the cached lines around `line` (up to MAX_REGION_LINES) into one
+   * region, replacing the regions of those lines.
+   */
+  private compileAround(line: number, isBreakpoint: (line: number) => boolean): CompiledRegion {
+    const cache = this.cache;
+    let start = line;
+    let end = line;
+    while (start > 0 && cache[start - 1] && line - start < MAX_REGION_LINES / 2) start--;
+    while (
+      end + 1 < this.program.lineCount &&
+      cache[end + 1] &&
+      end - start + 1 < MAX_REGION_LINES
+    ) {
+      end++;
+    }
+    const region = compileRegion(this.dsp, cache, start, end, isBreakpoint);
+    for (let i = start; i <= end; i++) this.regions[i] = region;
+    return region;
   }
 
   private executeUncached(line: number): ParseError | null {
