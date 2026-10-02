@@ -168,7 +168,7 @@ original. See [LICENSE.md](LICENSE.md).
 Jasmin was created at the Lehrstuhl für Rechnertechnik und Rechnerorganisation,
 Technische Universität München. Initial development by Yang Guo, Jakob Kummerow, Kai
 Orend and Stefanie Schmid; initial documentation and tutorials by André Aichert,
-Mattias Kaiser and Sebastian Ullherr; maintained by Marcel Meyer, with additional
+Matthias Kaiser and Sebastian Ullherr; maintained by Marcel Meyer, with additional
 credits to Johannes Roith and Alexander Ried. The port reuses the original's help
 pages, and its logo for the browser tab icon ([public/NOTICE.txt](public/NOTICE.txt)).
 
